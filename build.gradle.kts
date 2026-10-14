@@ -1,6 +1,6 @@
 buildscript {
-    // Android Gradle Plugin 9.1.1 currently brings Bouncy Castle 1.79 onto
-    // the build classpath. Pin its related modules to the patched release.
+    // Pin the Android Gradle Plugin's build-classpath Bouncy Castle modules
+    // to 1.85, which is the patched release for the reported advisories.
     configurations.classpath {
         resolutionStrategy.force(
             "org.bouncycastle:bcpkix-jdk18on:1.85",

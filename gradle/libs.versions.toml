@@ -2,7 +2,7 @@
 # https://docs.gradle.org/current/userguide/dependency_versions.html#sec:strict-version
 [versions]
 activity = "1.13.0"
-androidGradlePlugin = "9.1.1"
+androidGradlePlugin = "9.4.1"
 animeDb = "1.0.2"
 annotation = "1.10.0"
 appcompat = "1.7.1"
@@ -19,7 +19,7 @@ dokkaGradlePlugin = "2.2.0"
 espressoCore = "3.7.0"
 fragmentKtx = "1.8.9"
 instancioCore = "5.6.0"
-jacksonModuleKotlin = { strictly = "2.13.1" } # Later versions don't support minSdk <26 (Crashes on Android TV's and FireSticks)
+jacksonModuleKotlin = { strictly = "2.13.5" } # Keep the Android-compatible 2.13 line for minSdk 23 devices
 json = "20260522"
 jsoup = "1.23.2"
 junit = "4.13.2"
