@@ -42,7 +42,11 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.input.pointer.PointerIcon
 import androidx.compose.ui.input.pointer.pointerHoverIcon
 import androidx.compose.ui.text.font.FontWeight
@@ -84,6 +88,8 @@ fun ExtensionsScreen(modifier: Modifier = Modifier) {
     var selectedCategory by remember { mutableStateOf("All") }
     var selectedStatus by remember { mutableStateOf("All") }
     var searchQuery by remember { mutableStateOf("") }
+    var providerSearchFocused by remember { mutableStateOf(false) }
+    val providerSearchFocusRequester = remember { FocusRequester() }
 
     var showAddRepoDialog by remember { mutableStateOf(false) }
     var newRepoName by remember { mutableStateOf("") }
@@ -319,17 +325,31 @@ fun ExtensionsScreen(modifier: Modifier = Modifier) {
                 modifier = Modifier
                     .width(300.dp)
                     .clip(ShiopaStyle.ControlShape)
-                    .background(ShiopaStyle.SurfaceCard)
-                    .border(1.dp, ShiopaStyle.GlassBorder, ShiopaStyle.ControlShape)
+                    .background(if (providerSearchFocused) Color(0xFF1B1922) else ShiopaStyle.SurfaceCard)
+                    .border(
+                        width = if (providerSearchFocused) 1.5.dp else 1.dp,
+                        color = if (providerSearchFocused) ShiopaStyle.AccentMainBright else ShiopaStyle.GlassBorder,
+                        shape = ShiopaStyle.ControlShape
+                    )
+                    .clickable { providerSearchFocusRequester.requestFocus() }
                     .padding(horizontal = 14.dp, vertical = 7.dp)
             ) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text("⚲", fontSize = 13.sp, color = ShiopaStyle.TextSecondary)
+                    Text(
+                        "⚲",
+                        fontSize = 13.sp,
+                        color = if (providerSearchFocused) ShiopaStyle.AccentMainBright else ShiopaStyle.TextSecondary
+                    )
                     Spacer(modifier = Modifier.width(8.dp))
                     androidx.compose.foundation.text.BasicTextField(
                         value = searchQuery,
                         onValueChange = { searchQuery = it },
-                        modifier = Modifier.fillMaxWidth(),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .focusRequester(providerSearchFocusRequester)
+                            .onFocusChanged { providerSearchFocused = it.isFocused },
+                        singleLine = true,
+                        cursorBrush = SolidColor(ShiopaStyle.AccentMainBright),
                         textStyle = androidx.compose.ui.text.TextStyle(
                             color = Color.White,
                             fontSize = 13.sp
