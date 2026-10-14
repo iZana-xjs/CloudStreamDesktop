@@ -18,7 +18,7 @@ desugar_jdk_libs_nio = "2.1.5"
 dokkaGradlePlugin = "2.2.0"
 espressoCore = "3.7.0"
 fragmentKtx = "1.8.9"
-instancioCore = "5.6.0"
+instancioCore = "6.1.0"
 jacksonModuleKotlin = { strictly = "2.18.11" } # Jackson 2.18 requires Android API 26+
 json = "20260522"
 jsoup = "1.23.2"
