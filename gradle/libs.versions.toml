@@ -19,7 +19,7 @@ dokkaGradlePlugin = "2.2.0"
 espressoCore = "3.7.0"
 fragmentKtx = "1.8.9"
 instancioCore = "5.6.0"
-jacksonModuleKotlin = { strictly = "2.13.5" } # Keep the Android-compatible 2.13 line for minSdk 23 devices
+jacksonModuleKotlin = { strictly = "2.18.11" } # Jackson 2.18 requires Android API 26+
 json = "20260522"
 jsoup = "1.23.2"
 junit = "4.13.2"
@@ -64,7 +64,7 @@ lifecycleViewmodelCompose = "2.11.0"
 # "Error was captured in composition. java.lang.AbstractMethodError"
 jvmTarget = "11"
 jdkToolchain = "17"
-minSdk = "23"
+minSdk = "26"
 compileSdk = "37"
 targetSdk = "36"
 
