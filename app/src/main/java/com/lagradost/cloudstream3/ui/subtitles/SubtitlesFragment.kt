@@ -72,43 +72,43 @@ enum class SubtitleFont(
 ) {
     @JsonProperty("Trebuchet")
     @SerialName("Trebuchet")
-    Trebuchet(R.font.trebuchet_ms, "Trebuchet MS"),
+    Trebuchet(R.font.open_sans, "Open Sans"),
     @JsonProperty("Netflix")
     @SerialName("Netflix")
-    Netflix(R.font.netflix_sans, "Netflix Sans"),
+    Netflix(R.font.open_sans, "Open Sans"),
     @JsonProperty("Google")
     @SerialName("Google")
-    Google(R.font.google_sans, "Google Sans"),
+    Google(R.font.open_sans, "Open Sans"),
     @JsonProperty("Open")
     @SerialName("Open")
     Open(R.font.open_sans, "Open Sans"),
     @JsonProperty("Futura")
     @SerialName("Futura")
-    Futura(R.font.futura, "Futura"),
+    Futura(R.font.open_sans, "Open Sans"),
     @JsonProperty("Consola")
     @SerialName("Consola")
-    Consola(R.font.consola, "Consola"),
+    Consola(R.font.open_sans, "Open Sans"),
     @JsonProperty("Gotham")
     @SerialName("Gotham")
-    Gotham(R.font.gotham, "Gotham"),
+    Gotham(R.font.open_sans, "Open Sans"),
     @JsonProperty("Lucida")
     @SerialName("Lucida")
-    Lucida(R.font.lucida_grande, "Lucida Grande"),
+    Lucida(R.font.open_sans, "Open Sans"),
     @JsonProperty("STIX")
     @SerialName("STIX")
-    STIX(R.font.stix_general, "STIX General"),
+    STIX(R.font.open_sans, "Open Sans"),
     @JsonProperty("TimesNewRoman")
     @SerialName("TimesNewRoman")
-    TimesNewRoman(R.font.times_new_roman, "Times New Roman"),
+    TimesNewRoman(R.font.open_sans, "Open Sans"),
     @JsonProperty("Verdana")
     @SerialName("Verdana")
-    Verdana(R.font.verdana, "Verdana"),
+    Verdana(R.font.open_sans, "Open Sans"),
     @JsonProperty("Ubuntu")
     @SerialName("Ubuntu")
-    Ubuntu(R.font.ubuntu_regular, "Ubuntu"),
+    Ubuntu(R.font.open_sans, "Open Sans"),
     @JsonProperty("Comic")
     @SerialName("Comic")
-    Comic(R.font.comic_sans, "Comic Sans"),
+    Comic(R.font.open_sans, "Open Sans"),
     @JsonProperty("Poppins")
     @SerialName("Poppins")
     Poppins(R.font.poppins_regular, "Poppins"),
@@ -712,19 +712,7 @@ class SubtitlesFragment : BaseDialogFragment<SubtitleSettingsBinding>(
             subsFont.setOnClickListener { textView ->
                 val fontTypes = listOf(
                     null to textView.context.getString(R.string.normal),
-                    R.font.trebuchet_ms to "Trebuchet MS",
-                    R.font.netflix_sans to "Netflix Sans",
-                    R.font.google_sans to "Google Sans",
                     R.font.open_sans to "Open Sans",
-                    R.font.futura to "Futura",
-                    R.font.consola to "Consola",
-                    R.font.gotham to "Gotham",
-                    R.font.lucida_grande to "Lucida Grande",
-                    R.font.stix_general to "STIX General",
-                    R.font.times_new_roman to "Times New Roman",
-                    R.font.verdana to "Verdana",
-                    R.font.ubuntu_regular to "Ubuntu",
-                    R.font.comic_sans to "Comic Sans",
                     R.font.poppins_regular to "Poppins",
                 )
                 val savedFontTypes = textView.context.getSavedFonts()

@@ -4,6 +4,7 @@ import androidx.compose.animation.animateColorAsState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -53,6 +54,9 @@ import com.lagradost.cloudstream4.core.DesktopStorage
 import com.lagradost.cloudstream4.core.NotificationService
 import com.lagradost.cloudstream4.playback.DesktopPlayer
 import com.lagradost.cloudstream4.ui.theme.ShiopaStyle
+import com.lagradost.cloudstream4.generated.resources.Res
+import com.lagradost.cloudstream4.generated.resources.tmdb_logo
+import org.jetbrains.compose.resources.painterResource
 import java.awt.Desktop
 import java.io.File
 import javax.swing.JFileChooser
@@ -632,6 +636,22 @@ private fun androidx.compose.foundation.lazy.LazyListScope.renderSettingsSection
                             color = ShiopaStyle.TextSecondary,
                             lineHeight = 16.sp
                         )
+
+                        HorizontalDivider(color = ShiopaStyle.GlassBorder, modifier = Modifier.padding(vertical = 4.dp))
+
+                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+                            Image(
+                                painter = painterResource(Res.drawable.tmdb_logo),
+                                contentDescription = "The Movie Database logo",
+                                modifier = Modifier.width(76.dp).height(55.dp)
+                            )
+                            Text(
+                                "This product uses the TMDB API but is not endorsed or certified by TMDB. Movie and TV metadata and images are provided by TMDB.",
+                                fontSize = 12.sp,
+                                color = ShiopaStyle.TextSecondary,
+                                lineHeight = 17.sp
+                            )
+                        }
                     }
                 }
             }
