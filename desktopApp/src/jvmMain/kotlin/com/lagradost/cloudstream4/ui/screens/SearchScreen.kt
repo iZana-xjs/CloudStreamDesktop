@@ -63,8 +63,10 @@ import com.lagradost.cloudstream4.ui.components.MediaCard
 import com.lagradost.cloudstream4.ui.theme.ShiopaSpacing
 import com.lagradost.cloudstream4.ui.theme.ShiopaStyle
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.yield
@@ -355,29 +357,55 @@ fun validateLoadedIdentity(
     return DetailIdentityCheck.TitleMismatch(requestedTitle.orEmpty(), loadedTitle.orEmpty())
 }
 
+/**
+ * Search data lives at app scope rather than inside the composable. Opening a
+ * title replaces the SearchScreen composition; keeping this state lets Back
+ * restore the exact query/results/filter without issuing another provider
+ * search.
+ */
+private object SearchScreenSession {
+    val query = mutableStateOf("")
+    val submittedQuery = mutableStateOf("")
+    val searchRequestId = mutableIntStateOf(0)
+    var searchJob: Job? = null
+    val selectedProviderName = mutableStateOf("All Providers")
+    val selectedResultProvider = mutableStateOf("All Results")
+    val isSearching = mutableStateOf(false)
+    val providerFailures = mutableStateOf<List<String>>(emptyList())
+    val providerUnsupported = mutableStateOf<List<String>>(emptyList())
+    val searchResults = mutableStateListOf<SearchResponse>()
+    val recentSearches = mutableStateListOf("Batman", "Inception", "Breaking Bad", "Spider-Man", "Anime", "Attack on Titan")
+    val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
+    var lastDestination: NavDestination.Search? = null
+}
+
+private fun resultProviderName(item: SearchResponse): String =
+    item.apiName.trim().ifBlank { "Unknown provider" }
+
 @Composable
 fun SearchScreen(
     initialQuery: String? = null,
     initialApiName: String? = null,
+    destination: NavDestination.Search? = null,
     modifier: Modifier = Modifier
 ) {
     val scope = rememberCoroutineScope()
-    var query by remember { mutableStateOf(initialQuery ?: "") }
+    val session = SearchScreenSession
+    var query by session.query
     var selectedSuggestionTitle by remember { mutableStateOf<String?>(null) }
-    var submittedQuery by remember { mutableStateOf("") }
-    var searchRequestId by remember { mutableIntStateOf(0) }
-    var searchJob by remember { mutableStateOf<Job?>(null) }
-    var selectedProviderName by remember { mutableStateOf(initialApiName ?: "All Providers") }
-    var isSearching by remember { mutableStateOf(false) }
-    var providerFailures by remember { mutableStateOf<List<String>>(emptyList()) }
-    var providerUnsupported by remember { mutableStateOf<List<String>>(emptyList()) }
+    var submittedQuery by session.submittedQuery
+    var searchRequestId by session.searchRequestId
+    var selectedProviderName by session.selectedProviderName
+    var selectedResultProvider by session.selectedResultProvider
+    var isSearching by session.isSearching
+    var providerFailures by session.providerFailures
+    var providerUnsupported by session.providerUnsupported
     var isSearchFocused by remember { mutableStateOf(false) }
     var showSuggestions by remember { mutableStateOf(false) }
     var isLoadingSuggestions by remember { mutableStateOf(false) }
-    val searchResults = remember { mutableStateListOf<SearchResponse>() }
+    val searchResults = session.searchResults
     val suggestions = remember { mutableStateListOf<SearchResponse>() }
-
-    val recentSearches = remember { mutableStateListOf("Batman", "Inception", "Breaking Bad", "Spider-Man", "Anime", "Attack on Titan") }
+    val recentSearches = session.recentSearches
 
     val pluginsVersion by com.lagradost.cloudstream4.extensions.DesktopPluginManager.pluginsState.collectAsState()
     val allProviders = remember(pluginsVersion) { APIHolder.allProviders.toList() }
@@ -396,8 +424,9 @@ fun SearchScreen(
 
         // Cancel the previous round so its late responses can never replace
         // this query's results or failures. Cancellation is silent by design.
-        searchJob?.cancel()
-        searchJob = scope.launch {
+        selectedResultProvider = "All Results"
+        session.searchJob?.cancel()
+        session.searchJob = session.scope.launch {
             val targetProviders = if (selectedProviderName == "All Providers") {
                 // Metadata-only providers (TMDB catalog) return entries
                 // with no playable streams; mixing them into aggregate
@@ -416,7 +445,7 @@ fun SearchScreen(
             var pending = targetProviders.size
             val seenKeys = mutableSetOf<String>()
             targetProviders.forEach { provider ->
-                scope.launch(Dispatchers.IO) {
+                session.scope.launch(Dispatchers.IO) {
                     val outcome = searchOneProvider(provider, searchQuery)
                     withContext(Dispatchers.Main) {
                         if (requestId != searchRequestId) return@withContext
@@ -448,9 +477,18 @@ fun SearchScreen(
         }
     }
 
-    LaunchedEffect(Unit) {
-        if (!initialQuery.isNullOrBlank()) {
-            performSearch(initialQuery)
+    LaunchedEffect(destination, initialQuery, initialApiName) {
+        // The same Search destination object is retained in the navigation
+        // back stack while its screen is covered by MediaDetails. On return,
+        // leave its query and completed results untouched. A genuinely new
+        // Search destination may initialize from its incoming query.
+        if (destination == null || session.lastDestination !== destination) {
+            session.lastDestination = destination
+            selectedSuggestionTitle = null
+            showSuggestions = false
+            isSearchFocused = false
+            selectedProviderName = initialApiName?.takeIf { it.isNotBlank() } ?: "All Providers"
+            if (!initialQuery.isNullOrBlank()) performSearch(initialQuery)
         }
     }
 
@@ -725,7 +763,15 @@ fun SearchScreen(
 
         Spacer(modifier = Modifier.height(14.dp))
 
-        // Provider Filter Capsules
+        Text(
+            text = "Choose providers to search",
+            fontSize = 11.sp,
+            color = ShiopaStyle.TextMuted,
+            modifier = Modifier.padding(bottom = 6.dp)
+        )
+
+        // Provider query filter capsules; result-only filtering is shown with
+        // each provider's result count below the result summary.
         LazyRow(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(ShiopaSpacing.Sm)
@@ -839,6 +885,46 @@ fun SearchScreen(
                     modifier = Modifier.padding(bottom = 12.dp)
                 )
 
+                val resultProviderCounts = searchResults.groupingBy(::resultProviderName).eachCount()
+                val visibleResults = if (selectedResultProvider == "All Results") {
+                    searchResults.toList()
+                } else {
+                    searchResults.filter { resultProviderName(it) == selectedResultProvider }
+                }
+                Text(
+                    text = "Filter these results by provider",
+                    fontSize = 11.sp,
+                    color = ShiopaStyle.TextMuted,
+                    modifier = Modifier.padding(bottom = 6.dp)
+                )
+                LazyRow(
+                    modifier = Modifier.fillMaxWidth().padding(bottom = 12.dp),
+                    horizontalArrangement = Arrangement.spacedBy(ShiopaSpacing.Sm)
+                ) {
+                    val filterNames = listOf("All Results") + resultProviderCounts.keys.sorted()
+                    items(filterNames.size) { index ->
+                        val providerName = filterNames[index]
+                        val count = if (providerName == "All Results") searchResults.size else resultProviderCounts[providerName] ?: 0
+                        val selected = selectedResultProvider == providerName
+                        Box(
+                            modifier = Modifier
+                                .clip(ShiopaStyle.PillShape)
+                                .background(if (selected) ShiopaStyle.AccentMain else ShiopaStyle.SurfaceCard)
+                                .border(1.dp, if (selected) ShiopaStyle.AccentMain else ShiopaStyle.GlassBorder, ShiopaStyle.PillShape)
+                                .clickable { selectedResultProvider = providerName }
+                                .pointerHoverIcon(PointerIcon.Hand)
+                                .padding(horizontal = 12.dp, vertical = 7.dp)
+                        ) {
+                            Text(
+                                text = "$providerName · $count",
+                                fontSize = 11.sp,
+                                fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium,
+                                color = if (selected) Color.White else ShiopaStyle.TextSecondary
+                            )
+                        }
+                    }
+                }
+
                 LazyVerticalGrid(
                     columns = GridCells.Adaptive(minSize = 170.dp),
                     contentPadding = PaddingValues(bottom = 36.dp),
@@ -846,7 +932,7 @@ fun SearchScreen(
                     horizontalArrangement = Arrangement.spacedBy(ShiopaSpacing.Sm),
                     modifier = Modifier.fillMaxSize()
                 ) {
-                    items(searchResults, key = { searchResultKey(it.apiName, it.url) }) { item ->
+                    items(visibleResults, key = { searchResultKey(it.apiName, it.url) }) { item ->
                         val year = when (item) {
                             is com.lagradost.cloudstream3.MovieSearchResponse -> item.year
                             is com.lagradost.cloudstream3.TvSeriesSearchResponse -> item.year
@@ -860,6 +946,7 @@ fun SearchScreen(
                             year = year,
                             rating = rating,
                             type = item.type?.name,
+                            providerName = resultProviderName(item),
                             onClick = {
                                 // The destination is built from the CLICKED item
                                 // only — never from query text, position, or a

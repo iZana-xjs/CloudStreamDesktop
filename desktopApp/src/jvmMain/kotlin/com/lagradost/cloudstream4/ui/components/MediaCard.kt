@@ -54,6 +54,7 @@ fun MediaCard(
     year: Int? = null,
     rating: Double? = null,
     type: String? = null,
+    providerName: String? = null,
     watchProgress: Float? = null,
     modifier: Modifier = Modifier,
     onClick: () -> Unit
@@ -188,6 +189,7 @@ fun MediaCard(
 
                 // Top-left type / quality tag
                 val tagText = when {
+                    !providerName.isNullOrBlank() -> providerName
                     !type.isNullOrBlank() -> type.uppercase()
                     else -> "HD"
                 }
@@ -205,7 +207,9 @@ fun MediaCard(
                         color = Color(0xFFC0C0D4),
                         fontSize = 9.sp,
                         fontWeight = FontWeight.Bold,
-                        letterSpacing = 0.5.sp
+                        letterSpacing = 0.5.sp,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
                     )
                 }
 

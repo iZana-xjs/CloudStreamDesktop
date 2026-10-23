@@ -148,7 +148,16 @@ fun PlayerScreen(
     LaunchedEffect(posterUrl, title) {
         val artworkLoader = com.lagradost.cloudstream4.playback.PlayerArtworkAccent.ArtworkBytesLoader { url ->
             withContext(Dispatchers.IO) {
-                runCatching { java.net.URL(url).openStream().use { it.readBytes() } }.getOrNull()
+                runCatching {
+                    val connection = java.net.URL(url).openConnection().apply {
+                        connectTimeout = 5_000
+                        readTimeout = 5_000
+                        useCaches = true
+                    }
+                    if (connection.contentLengthLong > 8L * 1024 * 1024) return@runCatching null
+                    connection.getInputStream().buffered().use { it.readNBytes(8 * 1024 * 1024 + 1) }
+                        .takeIf { it.size <= 8 * 1024 * 1024 }
+                }.getOrNull()
             }
         }
         val accent = withContext(Dispatchers.IO) {
@@ -335,7 +344,7 @@ fun PlayerScreen(
         // Buffering Indicator (also covers seeking catch-up after coalesced seeks)
         if (DesktopPlayer.isBuffering || DesktopPlayer.isSeeking) {
             Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                CircularProgressIndicator(color = ShiopaStyle.AccentMain, modifier = Modifier.size(56.dp))
+                CircularProgressIndicator(color = playerAccentColor, modifier = Modifier.size(56.dp))
             }
         }
 
@@ -552,7 +561,7 @@ fun PlayerScreen(
                             modifier = Modifier
                                 .size(72.dp)
                                 .clip(CircleShape)
-                                .background(ShiopaStyle.AccentMain)
+                                .background(playerAccentColor)
                                 .clickable { DesktopPlayer.togglePlay() },
                             contentAlignment = Alignment.Center
                         ) {
@@ -655,8 +664,8 @@ fun PlayerScreen(
                             modifier = Modifier.fillMaxWidth().height(24.dp)
                                 .hoverable(interactionSource = seekHoverSource),
                             colors = SliderDefaults.colors(
-                                thumbColor = if (seekActive) Color.White else playerAccentColor,
-                                activeTrackColor = if (seekActive) Color.White else playerAccentColor,
+                                thumbColor = playerAccentColor,
+                                activeTrackColor = playerAccentColor,
                                 inactiveTrackColor = Color.White.copy(alpha = 0.3f)
                             )
                         )
@@ -696,8 +705,8 @@ fun PlayerScreen(
                                     valueRange = 0f..100f,
                                     modifier = Modifier.width(90.dp).height(20.dp),
                                     colors = SliderDefaults.colors(
-                                        thumbColor = ShiopaStyle.AccentMain,
-                                        activeTrackColor = ShiopaStyle.AccentMain,
+                                        thumbColor = playerAccentColor,
+                                        activeTrackColor = playerAccentColor,
                                         inactiveTrackColor = Color.White.copy(alpha = 0.3f)
                                     )
                                 )
@@ -998,7 +1007,7 @@ fun PlayerScreen(
                                 text = "↑ Scroll up — $playbackFirst above",
                                 fontSize = 11.sp,
                                 fontWeight = FontWeight.SemiBold,
-                                color = ShiopaStyle.AccentMain,
+                                color = playerAccentColor,
                                 modifier = Modifier.padding(bottom = 6.dp)
                             )
                         }
@@ -1039,8 +1048,8 @@ fun PlayerScreen(
                                         thickness = 10.dp,
                                         shape = RoundedCornerShape(5.dp),
                                         hoverDurationMillis = 300,
-                                        unhoverColor = ShiopaStyle.AccentMain.copy(alpha = 0.55f),
-                                        hoverColor = ShiopaStyle.AccentMain
+                                        unhoverColor = playerAccentColor.copy(alpha = 0.55f),
+                                        hoverColor = playerAccentColor
                                     ),
                                     modifier = Modifier.align(Alignment.CenterEnd)
                                         .height(with(LocalDensity.current) { playbackListHeightPx.toDp() })
@@ -1053,7 +1062,7 @@ fun PlayerScreen(
                                 text = "↓ Scroll for more — $playbackRemaining of $playbackTotal remaining",
                                 fontSize = 11.sp,
                                 fontWeight = FontWeight.SemiBold,
-                                color = ShiopaStyle.AccentMain,
+                                color = playerAccentColor,
                                 modifier = Modifier.padding(top = 8.dp)
                             )
                         }

@@ -101,7 +101,8 @@ fun DesktopShell(
                         is NavDestination.Discover -> DiscoverScreen(initialGenre = currentDest.initialGenre)
                         is NavDestination.Search -> SearchScreen(
                             initialQuery = currentDest.initialQuery,
-                            initialApiName = currentDest.initialApiName
+                            initialApiName = currentDest.initialApiName,
+                            destination = currentDest
                         )
                         is NavDestination.MediaDetails -> MediaDetailsScreen(
                             url = currentDest.url,

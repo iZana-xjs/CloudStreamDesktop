@@ -94,5 +94,7 @@ object PlayerArtworkAccent {
         return (0xFFL shl 24) or (rr.toLong() shl 16) or (gg.toLong() shl 8) or bb.toLong()
     }
 
-    fun toColor(accentLong: Long): Color = Color(accentLong.toInt() and 0xFFFFFF)
+    // `Color(Int)` expects a packed ARGB value. Masking off the high byte
+    // zeroed alpha, so the sampled accent was fully transparent in Compose.
+    fun toColor(accentLong: Long): Color = Color(accentLong.toInt())
 }
