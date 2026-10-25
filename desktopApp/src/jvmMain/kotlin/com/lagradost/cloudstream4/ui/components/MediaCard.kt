@@ -1,11 +1,11 @@
 package com.lagradost.cloudstream4.ui.components
 
-import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.focusable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsFocusedAsState
 import androidx.compose.foundation.interaction.collectIsHoveredAsState
@@ -15,15 +15,13 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.aspectRatio
-import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.material3.LinearProgressIndicator
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -35,18 +33,24 @@ import androidx.compose.ui.draw.scale
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.PointerIcon
 import androidx.compose.ui.input.pointer.pointerHoverIcon
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil3.compose.AsyncImage
 import com.lagradost.cloudstream4.ui.theme.ShiopaSpacing
 import com.lagradost.cloudstream4.ui.theme.ShiopaStyle
+import com.lagradost.cloudstream4.ui.theme.ShiopaType
 
+/**
+ * Poster-led media card. Artwork carries the color; chrome stays quiet:
+ * a hairline border, a small lift on hover, and a single play affordance.
+ * Only real metadata is shown (year / type / rating supplied by the caller).
+ */
 @Composable
 fun MediaCard(
     title: String,
@@ -57,6 +61,7 @@ fun MediaCard(
     providerName: String? = null,
     watchProgress: Float? = null,
     modifier: Modifier = Modifier,
+    cardWidth: Dp = 168.dp,
     onClick: () -> Unit
 ) {
     val interactionSource = remember { MutableInteractionSource() }
@@ -64,164 +69,130 @@ fun MediaCard(
     val isFocused by interactionSource.collectIsFocusedAsState()
     val active = isHovered || isFocused
 
-    val scale by animateFloatAsState(targetValue = if (active) 1.04f else 1.0f)
-    val cardElevation by animateDpAsState(targetValue = if (active) 18.dp else 2.dp)
-    val tilt by animateFloatAsState(targetValue = if (active) 2.2f else 0f)
-    val cardShape = ShiopaStyle.CornerLg
+    val scale by animateFloatAsState(
+        targetValue = if (active) 1.015f else 1f,
+        animationSpec = androidx.compose.animation.core.tween(140),
+        label = "card-scale"
+    )
+    val elevation by animateDpAsState(
+        targetValue = if (active) 10.dp else 2.dp,
+        animationSpec = androidx.compose.animation.core.tween(140),
+        label = "card-elevation"
+    )
+    val borderColor by animateColorAsState(
+        targetValue = when {
+            isFocused -> ShiopaStyle.AccentMain
+            isHovered -> ShiopaStyle.GlassBorderHover
+            else -> ShiopaStyle.GlassBorder
+        },
+        animationSpec = androidx.compose.animation.core.tween(140),
+        label = "card-border"
+    )
 
     Column(
         modifier = modifier
-            .width(170.dp)
-            .padding(ShiopaSpacing.Sm)
+            .width(cardWidth)
             .scale(scale)
             .pointerHoverIcon(PointerIcon.Hand)
-            .focusable(interactionSource = interactionSource)
             .clickable(
                 interactionSource = interactionSource,
                 indication = null,
                 onClick = onClick
             )
     ) {
-        Surface(
+        Box(
             modifier = Modifier
                 .fillMaxWidth()
                 .aspectRatio(2f / 3f)
                 .shadow(
-                    elevation = cardElevation,
-                    shape = cardShape,
-                    ambientColor = ShiopaStyle.AccentPurple.copy(alpha = if (active) 0.50f else 0.12f),
-                    spotColor = ShiopaStyle.AccentPurple.copy(alpha = if (active) 0.42f else 0.10f)
+                    elevation = elevation,
+                    shape = ShiopaStyle.CornerLg,
+                    ambientColor = Color.Black.copy(alpha = 0.55f),
+                    spotColor = Color.Black.copy(alpha = 0.45f)
                 )
-                .graphicsLayer {
-                    // Small perspective lift on hover/focus. Keep the angle subtle so
-                    // poster artwork and text stay readable at every window size.
-                    rotationX = -tilt * 0.55f
-                    rotationY = tilt
-                    cameraDistance = 12f * density
-                }
-                .border(
-                    width = if (active) 1.5.dp else 1.dp,
-                    color = if (active) ShiopaStyle.AccentPurple.copy(alpha = 0.95f) else ShiopaStyle.GlassBorder,
-                    shape = cardShape
-                ),
-            shape = cardShape,
-            color = ShiopaStyle.CardBackground
+                .clip(ShiopaStyle.CornerLg)
+                .border(1.dp, borderColor, ShiopaStyle.CornerLg)
+                .background(ShiopaStyle.CardBackground)
         ) {
-            Box(modifier = Modifier.fillMaxSize()) {
-                if (!posterUrl.isNullOrBlank()) {
-                    AsyncImage(
-                        model = posterUrl,
-                        contentDescription = title,
-                        contentScale = ContentScale.Crop,
-                        modifier = Modifier.fillMaxSize()
+            // Intentional missing-artwork state: title initials on a quiet
+            // gradient. Always painted underneath the image so a failed load
+            // never leaves a blank rectangle.
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(
+                        Brush.verticalGradient(
+                            listOf(ShiopaStyle.SurfaceCard, ShiopaStyle.Sidebar)
+                        )
+                    ),
+                contentAlignment = Alignment.Center
+            ) {
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    Text(
+                        text = title.trim().take(2).uppercase(),
+                        fontSize = 27.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        color = ShiopaStyle.TextPrimary.copy(alpha = 0.5f)
                     )
-                } else {
+                    Spacer(modifier = Modifier.height(8.dp))
                     Box(
                         modifier = Modifier
-                            .fillMaxSize()
-                            .background(
-                                Brush.verticalGradient(
-                                    listOf(Color(0xFF161528), Color(0xFF0F1019))
-                                )
-                            ),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Text(
-                            text = title.take(2).uppercase(),
-                            fontSize = 30.sp,
-                            fontWeight = FontWeight.Black,
-                            color = Color(0x66FFFFFF)
-                        )
-                    }
+                            .width(18.dp)
+                            .height(2.dp)
+                            .clip(ShiopaStyle.CornerSm)
+                            .background(ShiopaStyle.AccentMain.copy(alpha = 0.55f))
+                    )
                 }
+            }
 
-                // Bottom gradient so badges stay legible
+            if (!posterUrl.isNullOrBlank()) {
+                AsyncImage(
+                    model = posterUrl,
+                    contentDescription = title,
+                    contentScale = ContentScale.Crop,
+                    modifier = Modifier.fillMaxSize()
+                )
+            }
+
+            // A single legible playback affordance on hover/focus. No permanent
+            // badge stacks, no tilt, no colored bloom around the artwork.
+            if (active) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .background(Color.Black.copy(alpha = 0.28f))
+                )
+                Box(
+                    modifier = Modifier
+                        .size(40.dp)
+                        .align(Alignment.Center)
+                        .clip(CircleShape)
+                        .background(ShiopaStyle.AccentMain),
+                    contentAlignment = Alignment.Center
+                ) {
+                    ShiopaIcon(
+                        icon = ShiopaIcon.Play,
+                        size = 14.dp,
+                        tint = ShiopaStyle.TextOnAccent,
+                        strokeWidth = 0.dp,
+                        modifier = Modifier.padding(start = 2.dp)
+                    )
+                }
+            }
+
+            if (watchProgress != null && watchProgress > 0f) {
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(70.dp)
+                        .height(3.dp)
                         .align(Alignment.BottomCenter)
-                        .background(
-                            Brush.verticalGradient(
-                                listOf(Color.Transparent, Color(0xE6090A10))
-                            )
-                        )
-                )
-
-                // Hover / focus play overlay
-                if (active) {
-                    Box(
-                        modifier = Modifier
-                            .size(44.dp)
-                            .align(Alignment.Center)
-                            .clip(CircleShape)
-                            .background(ShiopaStyle.AccentMain),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Text(
-                            text = "▶",
-                            fontSize = 16.sp,
-                            color = Color.White,
-                            modifier = Modifier.padding(start = 2.dp)
-                        )
-                    }
-                }
-
-                // Top-right rating badge (gold = rating)
-                if (rating != null && rating > 0) {
-                    Box(
-                        modifier = Modifier
-                            .align(Alignment.TopEnd)
-                            .padding(7.dp)
-                            .clip(ShiopaStyle.CornerSm)
-                            .background(Color(0xDD090A10))
-                            .border(1.dp, ShiopaStyle.AccentGold.copy(alpha = 0.4f), ShiopaStyle.CornerSm)
-                            .padding(horizontal = 7.dp, vertical = 3.dp)
-                    ) {
-                        Text(
-                            text = "★ ${"%.1f".format(rating)}",
-                            color = ShiopaStyle.AccentGold,
-                            fontSize = 10.5.sp,
-                            fontWeight = FontWeight.Bold
-                        )
-                    }
-                }
-
-                // Top-left type / quality tag
-                val tagText = when {
-                    !type.isNullOrBlank() -> type.uppercase()
-                    else -> "HD"
-                }
-                Box(
-                    modifier = Modifier
-                        .align(Alignment.TopStart)
-                        .padding(7.dp)
-                        .clip(ShiopaStyle.CornerSm)
-                        .background(Color(0xDD090A10))
-                        .border(1.dp, ShiopaStyle.GlassBorder, ShiopaStyle.CornerSm)
-                        .padding(horizontal = 6.dp, vertical = 2.5.dp)
+                        .background(Color(0x66000000))
                 ) {
-                    Text(
-                        text = tagText,
-                        color = Color(0xFFC0C0D4),
-                        fontSize = 9.sp,
-                        fontWeight = FontWeight.Bold,
-                        letterSpacing = 0.5.sp,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
-                    )
-                }
-
-                // Resume watch progress indicator bar
-                if (watchProgress != null && watchProgress > 0f) {
-                    LinearProgressIndicator(
-                        progress = { watchProgress },
+                    Box(
                         modifier = Modifier
-                            .fillMaxWidth()
-                            .height(3.5.dp)
-                            .align(Alignment.BottomCenter),
-                        color = ShiopaStyle.AccentMain,
-                        trackColor = Color(0x66000000)
+                            .fillMaxWidth(watchProgress.coerceIn(0f, 1f))
+                            .height(3.dp)
+                            .background(ShiopaStyle.AccentMain)
                     )
                 }
             }
@@ -231,11 +202,8 @@ fun MediaCard(
 
         Text(
             text = title,
-            style = androidx.compose.ui.text.TextStyle(
-                fontSize = 13.5.sp,
-                fontWeight = if (active) FontWeight.SemiBold else FontWeight.Medium,
-                color = if (active) Color.White else Color(0xFFE2E2EC)
-            ),
+            style = ShiopaType.BodyStrong,
+            color = ShiopaStyle.TextPrimary,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis
         )
@@ -244,38 +212,67 @@ fun MediaCard(
             Text(
                 text = "via $providerName",
                 fontSize = 10.5.sp,
-                color = ShiopaStyle.AccentCyan,
+                fontWeight = FontWeight.Normal,
+                color = ShiopaStyle.TextMuted,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.padding(top = 2.dp)
+                modifier = Modifier.padding(top = 1.dp)
             )
         }
 
         Row(
-            modifier = Modifier.fillMaxWidth().padding(top = 2.dp),
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(18.dp)
+                .padding(top = 2.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(6.dp)
         ) {
             if (year != null && year > 0) {
                 Text(
                     text = year.toString(),
-                    fontSize = 11.5.sp,
+                    fontSize = 11.sp,
                     color = ShiopaStyle.TextMuted,
-                    fontWeight = FontWeight.Normal
+                    maxLines = 1
                 )
             }
-            if (!type.isNullOrBlank()) {
+            val prettyType = type?.takeIf { it.isNotBlank() }?.let(::displayMediaType)
+            if (prettyType != null) {
+                if (year != null && year > 0) {
+                    Text(text = "·", fontSize = 10.sp, color = ShiopaStyle.TextMuted)
+                }
                 Text(
-                    text = "•",
+                    text = prettyType,
                     fontSize = 11.sp,
-                    color = ShiopaStyle.TextMuted
+                    color = ShiopaStyle.TextMuted,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
                 )
+            }
+            if (rating != null && rating > 0) {
+                if ((year != null && year > 0) || prettyType != null) {
+                    Text(text = "·", fontSize = 10.sp, color = ShiopaStyle.TextMuted)
+                }
                 Text(
-                    text = type.replaceFirstChar { it.uppercase() },
-                    fontSize = 11.5.sp,
-                    color = ShiopaStyle.TextMuted
+                    text = "★ ${"%.1f".format(rating)}",
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.Medium,
+                    color = ShiopaStyle.AccentGold,
+                    maxLines = 1
                 )
             }
         }
     }
+}
+
+/** Turns provider enum names into human labels without inventing metadata. */
+internal fun displayMediaType(raw: String): String = when (raw.lowercase()) {
+    "tvseries" -> "TV Series"
+    "animemovie" -> "Anime Film"
+    "animeseries" -> "Anime Series"
+    "movie" -> "Movie"
+    "anime" -> "Anime"
+    "ova" -> "OVA"
+    "ona" -> "ONA"
+    else -> raw.replace(Regex("(?<=[a-z])([A-Z])"), " $1")
 }

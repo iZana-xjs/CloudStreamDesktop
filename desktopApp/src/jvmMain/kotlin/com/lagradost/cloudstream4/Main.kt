@@ -34,6 +34,7 @@ import com.lagradost.cloudstream4.playback.DesktopPlayer
 import com.lagradost.cloudstream4.theme.CloudStreamTheme
 import com.lagradost.cloudstream4.theme.CloudStreamThemeMode
 import com.lagradost.cloudstream4.ui.shell.DesktopShell
+import com.lagradost.cloudstream4.ui.shell.applyDarkWindowChrome
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import org.jetbrains.compose.resources.painterResource
@@ -279,6 +280,11 @@ fun main() {
         }
     ) {
         window.minimumSize = Dimension(960, 600)
+        LaunchedEffect(window) {
+            // The native peer can appear just after the first composition.
+            kotlinx.coroutines.delay(120)
+            applyDarkWindowChrome(window)
+        }
         DisposableEffect(window) {
             appWindow = window
             onDispose {

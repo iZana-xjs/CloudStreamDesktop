@@ -3,6 +3,7 @@ package com.lagradost.cloudstream4.ui.shell
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.material3.Surface
@@ -47,7 +48,8 @@ fun DesktopShell(
         }
     }
 
-    // If currently in Player destination, render full-window player without topbar
+    // If currently in Player destination, render full-window player without
+    // shell chrome. Playback/fullscreen behavior is unchanged.
     if (currentDest is NavDestination.Player) {
         Box(modifier = modifier.fillMaxSize()) {
             PlayerScreen(
@@ -80,57 +82,53 @@ fun DesktopShell(
     }
 
     BoxWithConstraints(modifier = modifier.fillMaxSize()) {
-        // The full desktop header needs room for its brand, navigation, search,
-        // provider count, and account controls. Use the compact navigation before
-        // those groups collide on a narrow or maximized laptop window.
-        val isCompact = maxWidth < 1180.dp
+        // Wide windows get a labelled rail; 960–1179px keeps the same rail with
+        // icon+label items so no destination is hidden behind a menu.
+        val railExpanded = maxWidth >= 1180.dp
 
         Surface(
             modifier = Modifier.fillMaxSize(),
             color = ShiopaStyle.CanvasBlack,
             contentColor = Color.White
         ) {
-            Column(modifier = Modifier.fillMaxSize()) {
-                // Floating Sleek Shiopa Glass Header
-                DesktopTopBar(isCompact = isCompact)
+            Row(modifier = Modifier.fillMaxSize()) {
+                DesktopSideRail(expanded = railExpanded)
 
-                // Full-Width Cinematic Content Pane
-                Box(modifier = Modifier.weight(1f).fillMaxWidth()) {
-                    when (currentDest) {
-                        is NavDestination.Home -> HomeScreen()
-                        is NavDestination.Discover -> DiscoverScreen(initialGenre = currentDest.initialGenre)
-                        is NavDestination.Search -> SearchScreen(
-                            initialQuery = currentDest.initialQuery,
-                            initialApiName = currentDest.initialApiName,
-                            destination = currentDest
-                        )
-                        is NavDestination.MediaDetails -> MediaDetailsScreen(
-                            url = currentDest.url,
-                            apiName = currentDest.apiName,
-                            initialTitle = currentDest.title,
-                            initialPosterUrl = currentDest.posterUrl,
-                            resumePositionMs = currentDest.resumePositionMs,
-                            resumeEpisodeIndex = currentDest.resumeEpisodeIndex,
-                            resumeSeasonIndex = currentDest.resumeSeasonIndex,
-                            resumeEpisodeTitle = currentDest.resumeEpisodeTitle
-                        )
-                        is NavDestination.Bookmarks -> BookmarksScreen()
-                        is NavDestination.History -> HistoryScreen()
-                        is NavDestination.Downloads -> DownloadsScreen(onSettingsChanged = onSettingsChanged)
-                        is NavDestination.Extensions -> ExtensionsScreen()
-                        is NavDestination.Settings -> SettingsScreen(
-                            currentSettings = settings,
-                            onSettingsChanged = onSettingsChanged
-                        )
-                        is NavDestination.Player -> { /* handled above */ }
+                Column(modifier = Modifier.weight(1f).fillMaxSize()) {
+                    DesktopTopBar(isCompact = !railExpanded)
+
+                    Box(modifier = Modifier.weight(1f).fillMaxWidth()) {
+                        when (currentDest) {
+                            is NavDestination.Home -> HomeScreen()
+                            is NavDestination.Discover -> DiscoverScreen(initialGenre = currentDest.initialGenre)
+                            is NavDestination.Search -> SearchScreen(
+                                initialQuery = currentDest.initialQuery,
+                                initialApiName = currentDest.initialApiName,
+                                destination = currentDest
+                            )
+                            is NavDestination.MediaDetails -> MediaDetailsScreen(
+                                url = currentDest.url,
+                                apiName = currentDest.apiName,
+                                initialTitle = currentDest.title,
+                                initialPosterUrl = currentDest.posterUrl,
+                                resumePositionMs = currentDest.resumePositionMs,
+                                resumeEpisodeIndex = currentDest.resumeEpisodeIndex,
+                                resumeSeasonIndex = currentDest.resumeSeasonIndex,
+                                resumeEpisodeTitle = currentDest.resumeEpisodeTitle
+                            )
+                            is NavDestination.Bookmarks -> BookmarksScreen()
+                            is NavDestination.History -> HistoryScreen()
+                            is NavDestination.Downloads -> DownloadsScreen(onSettingsChanged = onSettingsChanged)
+                            is NavDestination.Extensions -> ExtensionsScreen()
+                            is NavDestination.Settings -> SettingsScreen(
+                                currentSettings = settings,
+                                onSettingsChanged = onSettingsChanged
+                            )
+                            is NavDestination.Player -> { /* handled above */ }
+                        }
+
+                        ToastHost()
                     }
-
-                    ToastHost()
-                }
-
-                // Fixed Frosted Bottom Bar on Mobile/Compact Viewports (< 768dp)
-                if (isCompact) {
-                    DesktopBottomBar()
                 }
             }
         }
