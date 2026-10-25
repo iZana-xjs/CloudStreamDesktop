@@ -189,7 +189,6 @@ fun MediaCard(
 
                 // Top-left type / quality tag
                 val tagText = when {
-                    !providerName.isNullOrBlank() -> providerName
                     !type.isNullOrBlank() -> type.uppercase()
                     else -> "HD"
                 }
@@ -240,6 +239,17 @@ fun MediaCard(
             maxLines = 1,
             overflow = TextOverflow.Ellipsis
         )
+
+        if (!providerName.isNullOrBlank()) {
+            Text(
+                text = "via $providerName",
+                fontSize = 10.5.sp,
+                color = ShiopaStyle.AccentCyan,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.padding(top = 2.dp)
+            )
+        }
 
         Row(
             modifier = Modifier.fillMaxWidth().padding(top = 2.dp),

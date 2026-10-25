@@ -214,17 +214,21 @@ suspend fun searchOneProvider(
  */
 fun mergeSearchResults(
     seenKeys: MutableSet<String>,
-    newResults: List<SearchResponse>
-): List<SearchResponse> = newResults.filter { seenKeys.add(searchResultKey(it.apiName, it.url)) }
+    newResults: List<SearchResponse>,
+    owningProvider: String? = null
+): List<SearchResponse> = newResults.filter {
+    val providerName = owningProvider?.takeIf(String::isNotBlank) ?: it.apiName
+    seenKeys.add(searchResultKey(providerName, it.url))
+}
 
 /**
  * The click action for a result card, built from the CLICKED item only —
  * never from query text, list position, or a re-resolved title.
  */
-fun mediaDetailsDestination(item: SearchResponse): NavDestination.MediaDetails =
+fun mediaDetailsDestination(item: SearchResponse, owningProvider: String? = null): NavDestination.MediaDetails =
     NavDestination.MediaDetails(
         url = item.url,
-        apiName = item.apiName,
+        apiName = owningProvider?.takeIf(String::isNotBlank) ?: item.apiName,
         title = item.name,
         posterUrl = item.posterUrl
     )
@@ -374,13 +378,15 @@ private object SearchScreenSession {
     val providerFailures = mutableStateOf<List<String>>(emptyList())
     val providerUnsupported = mutableStateOf<List<String>>(emptyList())
     val searchResults = mutableStateListOf<SearchResponse>()
+    val resultProviders = java.util.IdentityHashMap<SearchResponse, String>()
     val recentSearches = mutableStateListOf("Batman", "Inception", "Breaking Bad", "Spider-Man", "Anime", "Attack on Titan")
     val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     var lastDestination: NavDestination.Search? = null
 }
 
 private fun resultProviderName(item: SearchResponse): String =
-    item.apiName.trim().ifBlank { "Unknown provider" }
+    SearchScreenSession.resultProviders[item]
+        ?: item.apiName.trim().ifBlank { "Unknown provider" }
 
 @Composable
 fun SearchScreen(
@@ -421,6 +427,7 @@ fun SearchScreen(
         providerFailures = emptyList()
         providerUnsupported = emptyList()
         searchResults.clear()
+        session.resultProviders.clear()
 
         // Cancel the previous round so its late responses can never replace
         // this query's results or failures. Cancellation is silent by design.
@@ -451,8 +458,13 @@ fun SearchScreen(
                         if (requestId != searchRequestId) return@withContext
                         when (outcome) {
                             is ProviderSearchOutcome.Success -> {
-                                val fresh = mergeSearchResults(seenKeys, outcome.results)
-                                if (fresh.isNotEmpty()) searchResults.addAll(fresh)
+                                val fresh = mergeSearchResults(seenKeys, outcome.results, outcome.providerName)
+                                if (fresh.isNotEmpty()) {
+                                    fresh.forEach { item ->
+                                        session.resultProviders[item] = outcome.providerName
+                                    }
+                                    searchResults.addAll(fresh)
+                                }
                             }
                             // Empty-but-successful is not a failure: stay silent.
                             is ProviderSearchOutcome.NoResults -> Unit
@@ -569,6 +581,7 @@ fun SearchScreen(
                                     isSearching = false
                                     showSuggestions = false
                                     searchResults.clear()
+                                    session.resultProviders.clear()
                                 }
                                 .padding(end = 14.dp)
                                 .pointerHoverIcon(PointerIcon.Hand)
@@ -932,7 +945,7 @@ fun SearchScreen(
                     horizontalArrangement = Arrangement.spacedBy(ShiopaSpacing.Sm),
                     modifier = Modifier.fillMaxSize()
                 ) {
-                    items(visibleResults, key = { searchResultKey(it.apiName, it.url) }) { item ->
+                    items(visibleResults, key = { searchResultKey(resultProviderName(it), it.url) }) { item ->
                         val year = when (item) {
                             is com.lagradost.cloudstream3.MovieSearchResponse -> item.year
                             is com.lagradost.cloudstream3.TvSeriesSearchResponse -> item.year
@@ -951,7 +964,7 @@ fun SearchScreen(
                                 // The destination is built from the CLICKED item
                                 // only — never from query text, position, or a
                                 // re-resolved title (see mediaDetailsDestination).
-                                NavigationManager.navigate(mediaDetailsDestination(item))
+                                NavigationManager.navigate(mediaDetailsDestination(item, resultProviderName(item)))
                             }
                         )
                     }
