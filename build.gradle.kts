@@ -2,19 +2,26 @@ buildscript {
     // Pin vulnerable transitive Android Gradle Plugin / Dokka classpath modules
     // to patched releases. These overrides affect build tooling only.
     configurations.classpath {
-        resolutionStrategy.force(
-            "org.bouncycastle:bcpkix-jdk18on:1.86",
-            "org.bouncycastle:bcprov-jdk18on:1.86",
-            "org.bouncycastle:bcutil-jdk18on:1.86",
-            "org.jdom:jdom2:2.0.6.1",
-            "org.apache.commons:commons-lang3:3.20.0",
-            "org.bitbucket.b_c:jose4j:0.9.7",
-            "com.fasterxml.jackson.core:jackson-annotations:2.18.11",
-            "com.fasterxml.jackson.core:jackson-core:2.18.11",
-            "com.fasterxml.jackson.core:jackson-databind:2.18.11",
-            "com.fasterxml.jackson.dataformat:jackson-dataformat-xml:2.18.11",
-            "com.fasterxml.jackson.module:jackson-module-kotlin:2.18.11",
-        )
+        resolutionStrategy {
+            force(
+                "org.bouncycastle:bcpkix-jdk18on:1.86",
+                "org.bouncycastle:bcprov-jdk18on:1.86",
+                "org.bouncycastle:bcutil-jdk18on:1.86",
+                "org.jdom:jdom2:2.0.6.1",
+                "org.apache.commons:commons-lang3:3.20.0",
+                "org.apache.httpcomponents:httpclient:4.5.14",
+                "org.apache.httpcomponents:httpmime:4.5.14",
+                "org.bitbucket.b_c:jose4j:0.9.7",
+                "org.freemarker:freemarker:2.3.35",
+                "com.fasterxml.jackson.core:jackson-annotations:2.18.11",
+                "com.fasterxml.jackson.core:jackson-core:2.18.11",
+                "com.fasterxml.jackson.core:jackson-databind:2.18.11",
+                "com.fasterxml.jackson.dataformat:jackson-dataformat-xml:2.18.11",
+                "com.fasterxml.jackson.module:jackson-module-kotlin:2.18.11",
+                "org.jsoup:jsoup:1.23.2",
+            )
+            activateDependencyLocking()
+        }
     }
 }
 
@@ -29,4 +36,35 @@ plugins {
     alias(libs.plugins.kotlin.serialization) apply false
     alias(libs.plugins.compose.compiler) apply false
     alias(libs.plugins.compose.multiplatform) apply false
+}
+
+// Lock every resolvable project configuration and keep vulnerable transitive
+// modules at patched versions across all modules, not only the Android app.
+dependencyLocking {
+    lockAllConfigurations()
+}
+
+subprojects {
+    dependencyLocking {
+        lockAllConfigurations()
+    }
+    configurations.configureEach {
+        resolutionStrategy.force(
+            "org.bouncycastle:bcpkix-jdk18on:1.86",
+            "org.bouncycastle:bcprov-jdk18on:1.86",
+            "org.bouncycastle:bcutil-jdk18on:1.86",
+            "org.jdom:jdom2:2.0.6.1",
+            "org.apache.commons:commons-lang3:3.20.0",
+            "org.apache.httpcomponents:httpclient:4.5.14",
+            "org.apache.httpcomponents:httpmime:4.5.14",
+            "org.bitbucket.b_c:jose4j:0.9.7",
+            "org.freemarker:freemarker:2.3.35",
+            "com.fasterxml.jackson.core:jackson-annotations:2.18.11",
+            "com.fasterxml.jackson.core:jackson-core:2.18.11",
+            "com.fasterxml.jackson.core:jackson-databind:2.18.11",
+            "com.fasterxml.jackson.dataformat:jackson-dataformat-xml:2.18.11",
+            "com.fasterxml.jackson.module:jackson-module-kotlin:2.18.11",
+            "org.jsoup:jsoup:1.23.2",
+        )
+    }
 }
