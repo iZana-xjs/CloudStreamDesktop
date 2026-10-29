@@ -3,6 +3,13 @@ buildscript {
     // to patched releases. These overrides affect build tooling only.
     configurations.classpath {
         resolutionStrategy {
+            eachDependency {
+                if (requested.group == "com.google.guava" && requested.name == "guava") {
+                    val variant = if (requested.version.orEmpty().endsWith("-android")) "android" else "jre"
+                    useVersion("33.7.2-$variant")
+                    because("Use Guava 33.7.2, which fixes the current Dependabot advisory")
+                }
+            }
             force(
                 "org.bouncycastle:bcpkix-jdk18on:1.86",
                 "org.bouncycastle:bcprov-jdk18on:1.86",
@@ -66,5 +73,12 @@ subprojects {
             "com.fasterxml.jackson.module:jackson-module-kotlin:2.18.11",
             "org.jsoup:jsoup:1.23.2",
         )
+        resolutionStrategy.eachDependency {
+            if (requested.group == "com.google.guava" && requested.name == "guava") {
+                val variant = if (requested.version.orEmpty().endsWith("-android")) "android" else "jre"
+                useVersion("33.7.2-$variant")
+                because("Use Guava 33.7.2, which fixes the current Dependabot advisory")
+            }
+        }
     }
 }

@@ -1708,7 +1708,7 @@ class UpdatedMatroskaExtractor private constructor(
     }
 
     private fun assertInitialized() {
-        checkNotNull<ExtractorOutput?>(
+        checkNotNull(
             extractorOutput
         )
     }
@@ -2378,7 +2378,7 @@ class UpdatedMatroskaExtractor private constructor(
          * fact at runtime.
          */
         fun assertOutputInitialized() {
-            checkNotNull<TrackOutput?>(
+            checkNotNull(
                 output
             )
         }
