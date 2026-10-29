@@ -13,6 +13,21 @@ This repository currently focuses on Windows. It is not an official release of t
 - Provider and stream compatibility can vary. Some codecs, HDR formats, and high-bitrate streams also depend on the user's PC, graphics hardware, display, and network.
 - No stable-release or automatic-update promise is made yet.
 
+## Home screen
+
+These screenshots show the running Windows desktop app. The Home screen includes the featured carousel, provider selector, category filters, and poster rails.
+
+<table>
+  <tr>
+    <td><img src="screenshots/homepage/home-featured-drive.png" alt="CloudStream Desktop Home with the Drive The Pretenders featured carousel" width="480"></td>
+    <td><img src="screenshots/homepage/home-featured-dhindora.png" alt="CloudStream Desktop Home with the Dhindora featured carousel" width="480"></td>
+  </tr>
+  <tr>
+    <td><img src="screenshots/homepage/home-featured-baththa.png" alt="CloudStream Desktop Home with the Baththa featured carousel" width="480"></td>
+    <td><img src="screenshots/homepage/home-content-rails.png" alt="CloudStream Desktop Home showing the Bollywood and Hollywood content rails" width="480"></td>
+  </tr>
+</table>
+
 ## Build on Windows
 
 Requirements: Git, JDK 17, and the included Gradle wrapper. Set `JAVA_HOME` to your JDK 17 folder, then run these commands from the repository root in PowerShell:
