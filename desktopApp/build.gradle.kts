@@ -75,6 +75,8 @@ compose.desktop {
                 // lets users pick another folder (e.g. D:) at install time.
                 perUserInstall = true
                 dirChooser = true
+                // Create a CloudStream desktop shortcut during installation.
+                shortcut = true
                 // menuGroup = "Compose Examples"
                 // see https://wixtoolset.org/documentation/manual/v3/howtos/general/generate_guids.html
                 // upgradeUuid = ""
