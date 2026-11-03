@@ -76,6 +76,7 @@ import com.lagradost.cloudstream4.playback.PlayerTrack
 import com.lagradost.cloudstream4.playback.computeSeekTargetMs
 import com.lagradost.cloudstream4.playback.describeVideoStarvation
 import com.lagradost.cloudstream4.playback.fourccToString
+import com.lagradost.cloudstream4.playback.nextDecoderRetryPlan
 import com.lagradost.cloudstream4.playback.fractionToMs
 import com.lagradost.cloudstream4.playback.msToFraction
 import com.lagradost.cloudstream3.HomePageList
@@ -1511,5 +1512,22 @@ class DesktopAppUnitTests {
             assertFalse(msg.contains("http"))
             assertFalse(msg.contains("token", ignoreCase = true))
         }
+    }
+
+    @Test
+    fun testDecoderRetryPlanTriesAlternateWindowsHardwareThenSoftware() {
+        assertEquals(
+            com.lagradost.cloudstream4.playback.DecoderRetryPlan(true, "any"),
+            nextDecoderRetryPlan(hardware = true, hardwareBackend = null, isWindows = true)
+        )
+        assertEquals(
+            com.lagradost.cloudstream4.playback.DecoderRetryPlan(false, null),
+            nextDecoderRetryPlan(hardware = true, hardwareBackend = "any", isWindows = true)
+        )
+        assertEquals(
+            com.lagradost.cloudstream4.playback.DecoderRetryPlan(false, null),
+            nextDecoderRetryPlan(hardware = true, hardwareBackend = null, isWindows = false)
+        )
+        assertNull(nextDecoderRetryPlan(hardware = false, hardwareBackend = null, isWindows = true))
     }
 }

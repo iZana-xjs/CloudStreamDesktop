@@ -13,6 +13,10 @@ This repository currently focuses on Windows. It is not an official release of t
 - Provider and stream compatibility can vary. Some codecs, HDR formats, and high-bitrate streams also depend on the user's PC, graphics hardware, display, and network.
 - No stable-release or automatic-update promise is made yet.
 
+## Windows installer
+
+The latest locally verified Windows MSI is available at [CloudStream-1.0.1.msi](artifacts/CloudStream-1.0.1.msi). This is a development build, not a stable release. Verify the SHA-256 digest in [CloudStream-1.0.1.msi.sha256](artifacts/CloudStream-1.0.1.msi.sha256) before installing. Installing a newer MSI does not enable automatic updates; users must install a future build manually.
+
 ## Home screen
 
 These screenshots show the running Windows desktop app. The Home screen includes the featured carousel, provider selector, category filters, and poster rails.

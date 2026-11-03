@@ -31,7 +31,9 @@ import kotlin.math.sin
  */
 enum class ShiopaIcon {
     Home, Explore, Watchlist, Downloads, History, Extensions, Settings,
-    Search, User, ChevronLeft, ChevronRight, ChevronDown, Play, Plus, Check, Close
+    Search, User, ChevronLeft, ChevronRight, ChevronDown, Play, Pause,
+    VideoRewind, VideoForward, Volume, Subtitles, Playlist, Fullscreen,
+    Plus, Check, Close
 }
 
 @Composable
@@ -221,6 +223,77 @@ fun ShiopaIcon(
                     },
                     tint
                 )
+            }
+
+            ShiopaIcon.Pause -> {
+                val barWidth = extent * 0.22f
+                val barHeight = extent * 0.68f
+                val top = extent * 0.16f
+                drawRoundRect(tint, Offset(extent * 0.25f, top), Size(barWidth, barHeight), CornerRadius(extent * 0.04f))
+                drawRoundRect(tint, Offset(extent * 0.58f, top), Size(barWidth, barHeight), CornerRadius(extent * 0.04f))
+            }
+
+            ShiopaIcon.VideoRewind, ShiopaIcon.VideoForward -> {
+                val backward = icon == ShiopaIcon.VideoRewind
+                fun triangle(points: List<Offset>) {
+                    drawPath(Path().apply {
+                        moveTo(points[0].x, points[0].y)
+                        lineTo(points[1].x, points[1].y)
+                        lineTo(points[2].x, points[2].y)
+                        close()
+                    }, tint)
+                }
+                if (backward) {
+                    drawRoundRect(tint, Offset(p(2f, 5f).x, p(2f, 5f).y), Size(extent * 0.09f, extent * 0.5f), CornerRadius(extent * 0.04f))
+                    triangle(listOf(p(10f, 4f), p(4f, 10f), p(10f, 16f)))
+                    triangle(listOf(p(17f, 4f), p(11f, 10f), p(17f, 16f)))
+                } else {
+                    drawRoundRect(tint, Offset(p(18f, 5f).x, p(18f, 5f).y), Size(extent * 0.09f, extent * 0.5f), CornerRadius(extent * 0.04f))
+                    triangle(listOf(p(3f, 4f), p(9f, 10f), p(3f, 16f)))
+                    triangle(listOf(p(10f, 4f), p(16f, 10f), p(10f, 16f)))
+                }
+            }
+
+            ShiopaIcon.Volume -> {
+                drawPath(Path().apply {
+                    moveTo(p(2.8f, 8f).x, p(2.8f, 8f).y)
+                    lineTo(p(6.1f, 8f).x, p(6.1f, 8f).y)
+                    lineTo(p(10.7f, 4.3f).x, p(10.7f, 4.3f).y)
+                    lineTo(p(10.7f, 15.7f).x, p(10.7f, 15.7f).y)
+                    lineTo(p(6.1f, 12f).x, p(6.1f, 12f).y)
+                    lineTo(p(2.8f, 12f).x, p(2.8f, 12f).y)
+                    close()
+                }, tint)
+                path {
+                    moveTo(p(13f, 7f).x, p(13f, 7f).y)
+                    cubicTo(p(15.5f, 8.4f).x, p(15.5f, 8.4f).y, p(15.5f, 11.6f).x, p(15.5f, 11.6f).y, p(13f, 13f).x, p(13f, 13f).y)
+                }
+                path {
+                    moveTo(p(15f, 4.8f).x, p(15f, 4.8f).y)
+                    cubicTo(p(19f, 7.4f).x, p(19f, 7.4f).y, p(19f, 12.6f).x, p(19f, 12.6f).y, p(15f, 15.2f).x, p(15f, 15.2f).y)
+                }
+            }
+
+            ShiopaIcon.Subtitles -> {
+                drawRoundRect(tint, Offset(p(2f, 4f).x, p(2f, 4f).y), Size(extent * 0.8f, extent * 0.58f), CornerRadius(extent * 0.09f), style = stroke)
+                line(5f, 9f, 9f, 9f)
+                line(11f, 9f, 15f, 9f)
+                line(5f, 12f, 8f, 12f)
+                line(11f, 12f, 14f, 12f)
+            }
+
+            ShiopaIcon.Playlist -> {
+                for (y in listOf(5f, 10f, 15f)) drawCircle(tint, extent * 0.075f, p(4f, y))
+                line(8f, 5f, 17f, 5f)
+                line(8f, 10f, 17f, 10f)
+                line(8f, 15f, 17f, 15f)
+            }
+
+            ShiopaIcon.Fullscreen -> {
+                path { moveTo(p(8f, 3f).x, p(8f, 3f).y); lineTo(p(3f, 3f).x, p(3f, 3f).y); lineTo(p(3f, 8f).x, p(3f, 8f).y) }
+                path { moveTo(p(12f, 3f).x, p(12f, 3f).y); lineTo(p(17f, 3f).x, p(17f, 3f).y); lineTo(p(17f, 8f).x, p(17f, 8f).y) }
+                path { moveTo(p(3f, 12f).x, p(3f, 12f).y); lineTo(p(3f, 17f).x, p(3f, 17f).y); lineTo(p(8f, 17f).x, p(8f, 17f).y) }
+                path { moveTo(p(17f, 12f).x, p(17f, 12f).y); lineTo(p(17f, 17f).x, p(17f, 17f).y); lineTo(p(12f, 17f).x, p(12f, 17f).y) }
             }
 
             ShiopaIcon.Plus -> {

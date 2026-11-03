@@ -617,7 +617,7 @@ private fun androidx.compose.foundation.lazy.LazyListScope.renderSettingsSection
                             Spacer(modifier = Modifier.width(12.dp))
                             Column {
                                 Text("CloudStream Desktop", fontWeight = FontWeight.Black, fontSize = 18.sp, color = Color.White)
-                                Text("Version 1.0.0 • Production Build", fontSize = 12.sp, color = ShiopaStyle.TextMuted)
+                                Text("Version 1.0.1 • Development Build", fontSize = 12.sp, color = ShiopaStyle.TextMuted)
                             }
                         }
 

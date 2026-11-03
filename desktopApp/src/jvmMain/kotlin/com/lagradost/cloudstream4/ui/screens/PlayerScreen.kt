@@ -8,6 +8,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.ScrollbarStyle
 import androidx.compose.foundation.VerticalScrollbar
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.border
 import androidx.compose.foundation.focusable
 import androidx.compose.foundation.hoverable
 import androidx.compose.foundation.interaction.MutableInteractionSource
@@ -60,6 +61,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.awt.SwingPanel
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Brush
@@ -80,6 +82,7 @@ import com.lagradost.cloudstream4.navigation.NavigationManager
 import com.lagradost.cloudstream4.navigation.PlaybackSource
 import com.lagradost.cloudstream4.navigation.handleSourceListKey
 import com.lagradost.cloudstream4.navigation.sortPlaybackSources
+import com.lagradost.cloudstream4.ui.components.ShiopaIcon
 import com.lagradost.cloudstream4.ui.theme.ShiopaStyle
 import com.lagradost.cloudstream4.playback.DesktopPlayer
 import com.lagradost.cloudstream4.playback.fractionToMs
@@ -547,42 +550,50 @@ fun PlayerScreen(
                         // Rewind 10s
                         Box(
                             modifier = Modifier
-                                .size(50.dp)
+                                .size(54.dp)
                                 .clip(CircleShape)
                                 .background(Color.Black.copy(alpha = 0.5f))
                                 .clickable { DesktopPlayer.seekRelative(-DesktopStorage.settings.defaultSeekSeconds.toLong()) },
                             contentAlignment = Alignment.Center
                         ) {
-                            Text("↶ ${DesktopStorage.settings.defaultSeekSeconds}s", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                ShiopaIcon(icon = ShiopaIcon.VideoRewind, size = 23.dp, tint = Color.White, strokeWidth = 1.8.dp)
+                                Text("${DesktopStorage.settings.defaultSeekSeconds}s", color = Color.White.copy(alpha = 0.78f), fontSize = 9.sp, fontWeight = FontWeight.SemiBold)
+                            }
                         }
 
                         // Big Play / Pause
                         Box(
                             modifier = Modifier
                                 .size(72.dp)
+                                .shadow(12.dp, CircleShape)
                                 .clip(CircleShape)
-                                .background(playerAccentColor)
+                                .background(Brush.linearGradient(listOf(playerAccentColor, playerAccentColor.copy(alpha = 0.72f))))
+                                .border(1.dp, Color.White.copy(alpha = 0.35f), CircleShape)
                                 .clickable { DesktopPlayer.togglePlay() },
                             contentAlignment = Alignment.Center
                         ) {
-                            Text(
-                                text = if (DesktopPlayer.isPlaying) "❚❚" else "▶",
-                                color = Color.White,
-                                fontSize = 26.sp,
-                                fontWeight = FontWeight.Black
+                            ShiopaIcon(
+                                icon = if (DesktopPlayer.isPlaying) ShiopaIcon.Pause else ShiopaIcon.Play,
+                                size = 27.dp,
+                                tint = Color.White,
+                                strokeWidth = 0.dp
                             )
                         }
 
                         // Forward 10s
                         Box(
                             modifier = Modifier
-                                .size(50.dp)
+                                .size(54.dp)
                                 .clip(CircleShape)
                                 .background(Color.Black.copy(alpha = 0.5f))
                                 .clickable { DesktopPlayer.seekRelative(DesktopStorage.settings.defaultSeekSeconds.toLong()) },
                             contentAlignment = Alignment.Center
                         ) {
-                            Text("${DesktopStorage.settings.defaultSeekSeconds}s ↷", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                ShiopaIcon(icon = ShiopaIcon.VideoForward, size = 23.dp, tint = Color.White, strokeWidth = 1.8.dp)
+                                Text("${DesktopStorage.settings.defaultSeekSeconds}s", color = Color.White.copy(alpha = 0.78f), fontSize = 9.sp, fontWeight = FontWeight.SemiBold)
+                            }
                         }
                     }
                     }
@@ -797,10 +808,10 @@ fun PlayerScreen(
 
                                 // Audio Track
                                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                                    Text(
-                                        text = "🔊",
-                                        color = Color.White,
-                                        fontSize = 16.sp,
+                                    ShiopaIcon(
+                                        icon = ShiopaIcon.Volume,
+                                        size = 20.dp,
+                                        tint = Color.White,
                                         modifier = Modifier.clickable { showAudioDialog = true }
                                     )
                                     Text(
@@ -812,10 +823,10 @@ fun PlayerScreen(
 
                                 // Subtitles
                                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                                    Text(
-                                        text = "💬",
-                                        color = Color.White,
-                                        fontSize = 16.sp,
+                                    ShiopaIcon(
+                                        icon = ShiopaIcon.Subtitles,
+                                        size = 20.dp,
+                                        tint = Color.White,
                                         modifier = Modifier.clickable { showSubtitleDialog = true }
                                     )
                                     Text("Subtitles", color = Color.White.copy(alpha = 0.55f), fontSize = 10.sp)
@@ -823,10 +834,10 @@ fun PlayerScreen(
 
                                 if (sources.isNotEmpty()) {
                                     Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                                        Text(
-                                            text = "☰",
-                                            color = Color.White,
-                                            fontSize = 16.sp,
+                                        ShiopaIcon(
+                                            icon = ShiopaIcon.Playlist,
+                                            size = 20.dp,
+                                            tint = Color.White,
                                             modifier = Modifier.clickable { showSourceDialog = true }
                                         )
                                         Text("Source", color = Color.White.copy(alpha = 0.55f), fontSize = 10.sp)
@@ -835,10 +846,10 @@ fun PlayerScreen(
 
                                 // Fullscreen Toggle
                                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                                    Text(
-                                        text = "⛶",
-                                        color = Color.White,
-                                        fontSize = 18.sp,
+                                    ShiopaIcon(
+                                        icon = ShiopaIcon.Fullscreen,
+                                        size = 21.dp,
+                                        tint = Color.White,
                                         modifier = Modifier.clickable { onToggleFullscreen() }
                                     )
                                     Text("Full", color = Color.White.copy(alpha = 0.55f), fontSize = 10.sp)

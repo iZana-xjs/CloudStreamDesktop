@@ -101,6 +101,19 @@ fun describeVideoStarvation(codecFourcc: String?, softwareFallbackAttempted: Boo
     }
 }
 
+/** Select the next decoder path after a stream advances without rendering frames. */
+data class DecoderRetryPlan(val hardware: Boolean, val hardwareBackend: String?)
+
+fun nextDecoderRetryPlan(
+    hardware: Boolean,
+    hardwareBackend: String?,
+    isWindows: Boolean
+): DecoderRetryPlan? = when {
+    !hardware -> null
+    isWindows && hardwareBackend != "any" -> DecoderRetryPlan(hardware = true, hardwareBackend = "any")
+    else -> DecoderRetryPlan(hardware = false, hardwareBackend = null)
+}
+
 object DesktopPlayer {
     private var factory: MediaPlayerFactory? = null
     private val initializationLock = Any()
@@ -186,11 +199,12 @@ object DesktopPlayer {
     /**
      * Session-scoped starvation fallback bookkeeping. Each play() bumps
      * [playbackSessionId] so stale watchdog threads can never act on a newer
-     * playback; [lastAutoSwFallbackSessionId] guarantees at most one automatic
-     * hardware→software retry per session (never software→hardware, so no loops).
+     * playback. Automatic recovery steps through one alternate Windows
+     * hardware backend, then software decoding, so retries cannot loop.
      */
     private var playbackSessionId = 0L
-    private var lastAutoSwFallbackSessionId = -1L
+    /** Windows backend override; null is the default D3D11VA path (or software when HW is off). */
+    @Volatile private var activeHardwareBackend: String? = null
 
     val isVlcAvailable: Boolean by lazy {
         try {
@@ -255,7 +269,7 @@ object DesktopPlayer {
         true
     }
 
-    private fun buildVlcArgs(hardware: Boolean): Array<String> {
+    private fun buildVlcArgs(hardware: Boolean, hardwareBackend: String? = null): Array<String> {
         val base = mutableListOf(
             "--no-snapshot-preview",
             "--quiet",
@@ -282,7 +296,9 @@ object DesktopPlayer {
             if (System.getProperty("os.name").startsWith("Windows", ignoreCase = true)) {
                 // Keep Compose-compatible callback output; forcing Direct3D11 vout
                 // embeds a heavyweight Canvas that can stay black in SwingPanel.
-                base.add("--avcodec-hw=d3d11va")
+                // Prefer D3D11VA, then retry VLC's automatic Windows backend
+                // selection if this driver cannot render through the callback surface.
+                base.add(if (hardwareBackend == "any") "--avcodec-hw=any" else "--avcodec-hw=d3d11va")
             } else {
                 base.add("--avcodec-hw=any")
             }
@@ -327,14 +343,14 @@ object DesktopPlayer {
         return initializeInternal(wantsHardware())
     }
 
-    private fun initializeInternal(hardware: Boolean): JComponent? {
+    private fun initializeInternal(hardware: Boolean, hardwareBackend: String? = null): JComponent? {
         if (!isVlcAvailable) {
             println("VLC native libraries not found on this system. Playback will run in fallback mode.")
             return null
         }
         mediaPlayerComponent?.let {
             // Recreate when the decoder mode changes.
-            if (usingHardwareDecoding == hardware) return it
+            if (usingHardwareDecoding == hardware && (!hardware || activeHardwareBackend == hardwareBackend)) return it
             releasePlayer()
         }
 
@@ -346,7 +362,7 @@ object DesktopPlayer {
                     videoWidth = 0
                     videoHeight = 0
                     videoCodecFourcc = null
-                    val args = buildVlcArgs(hardware)
+                    val args = buildVlcArgs(hardware, hardwareBackend)
                     var activeFactory = MediaPlayerFactory(*args)
                     val component: JComponent = try {
                         FrameCountingCallbackComponent(activeFactory)
@@ -360,6 +376,7 @@ object DesktopPlayer {
                     factory = activeFactory
                     callbackComponent = component as FrameCountingCallbackComponent
                     usingHardwareDecoding = hardware && lastError?.startsWith("Hardware decoder setup failed") != true
+                    activeHardwareBackend = if (usingHardwareDecoding) hardwareBackend else null
                     mediaPlayerComponent = component
                     setupEventListeners()
                     applyResizeMode()
@@ -541,7 +558,8 @@ object DesktopPlayer {
         episodeTitle: String? = null,
         startMs: Long = 0L,
         forceHardwareRenderer: Boolean? = null,
-        headers: Map<String, String> = emptyMap()
+        headers: Map<String, String> = emptyMap(),
+        forceHardwareBackend: String? = null
     ) {
         val vlcUrl = normalizeMediaUrl(url)
         currentMediaUrl = vlcUrl
@@ -562,8 +580,10 @@ object DesktopPlayer {
         val sessionId = playbackSessionId
 
         val hardware = forceHardwareRenderer ?: wantsHardware()
-        if (mediaPlayerComponent == null || usingHardwareDecoding != hardware) {
-            initializeInternal(hardware)
+        if (mediaPlayerComponent == null || usingHardwareDecoding != hardware ||
+            (hardware && activeHardwareBackend != forceHardwareBackend)
+        ) {
+            initializeInternal(hardware, forceHardwareBackend)
         }
         // Re-apply the user's persisted resize choice to reused pipelines.
         applyResizeMode()
@@ -606,12 +626,20 @@ object DesktopPlayer {
                         currentTimeMs > 5000L && isPlaying && !hasVideo
                     }
                     if (!starving) return@invokeLater
-                    if (usingHardwareDecoding && lastAutoSwFallbackSessionId != sessionId) {
-                        lastAutoSwFallbackSessionId = sessionId
-                        lastError = describeVideoStarvation(videoCodecFourcc, false)
-                        replayWithDecoder(hardware = false)
+                    val retryPlan = nextDecoderRetryPlan(
+                        hardware = usingHardwareDecoding,
+                        hardwareBackend = activeHardwareBackend,
+                        isWindows = System.getProperty("os.name").startsWith("Windows", ignoreCase = true)
+                    )
+                    if (retryPlan != null) {
+                        val retryMessage = if (retryPlan.hardware) {
+                            "Video frames are not rendering with D3D11VA; retrying with VLC's automatic hardware decoder…"
+                        } else {
+                            describeVideoStarvation(videoCodecFourcc, false)
+                        }
+                        replayWithDecoder(retryPlan.hardware, retryPlan.hardwareBackend, retryMessage)
                     } else if (lastError == null) {
-                        lastError = describeVideoStarvation(videoCodecFourcc, true)
+                        lastError = describeVideoStarvation(videoCodecFourcc, softwareFallbackAttempted = true)
                     }
                 }
             }.apply { isDaemon = true; name = "CloudStream-track-refresh"; start() }
@@ -623,15 +651,17 @@ object DesktopPlayer {
     }
 
     /** Session-scoped decoder replay: rebuilds only this playback's pipeline. */
-    private fun replayWithDecoder(hardware: Boolean) {
+    private fun replayWithDecoder(hardware: Boolean, hardwareBackend: String? = null, retryMessage: String? = null) {
         val url = currentMediaUrl ?: return
         val resumeMs = currentTimeMs
         releasePlayer()
         play(
             url, currentTitle, currentEpisodeTitle, resumeMs,
             forceHardwareRenderer = hardware,
-            headers = currentStreamHeaders
+            headers = currentStreamHeaders,
+            forceHardwareBackend = hardwareBackend
         )
+        if (retryMessage != null) lastError = retryMessage
     }
 
     /** Black-screen recovery: tear down and replay with the opposite decoder mode. */
