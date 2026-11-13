@@ -51,7 +51,7 @@ compose.desktop {
         nativeDistributions {
             targetFormats(TargetFormat.Dmg, TargetFormat.Msi, TargetFormat.Deb)
             packageName = "CloudStream"
-            packageVersion = "1.0.1"
+            packageVersion = "1.0.4"
             modules(
                 "java.instrument",
                 "jdk.unsupported",
@@ -77,7 +77,8 @@ compose.desktop {
                 dirChooser = true
                 // Create a CloudStream desktop shortcut during installation.
                 shortcut = true
-                // menuGroup = "Compose Examples"
+                menu = true
+                menuGroup = "CloudStream"
                 // see https://wixtoolset.org/documentation/manual/v3/howtos/general/generate_guids.html
                 // upgradeUuid = ""
             }
@@ -90,4 +91,38 @@ compose.desktop {
         //    configurationFiles.from(project.file("rules.pro"))
         //}
     }
+}
+
+// Remove jpackage/WiX's recursive INSTALLDIR cleanup from the completed MSI.
+// This finalizer edits only the generated installer database; normal MSI-owned
+// files and shortcuts remain uninstallable, while app data is preserved.
+val msiArtifact = layout.buildDirectory.file("compose/binaries/main/msi/CloudStream-1.0.4.msi")
+
+val patchMsiUninstallSafety = tasks.register<Exec>("patchMsiUninstallSafety") {
+    commandLine(
+        "powershell.exe",
+        "-NoProfile",
+        "-ExecutionPolicy",
+        "Bypass",
+        "-File",
+        layout.projectDirectory.file("scripts/patch-msi-uninstall-safety.ps1").asFile.absolutePath,
+        msiArtifact.get().asFile.absolutePath
+    )
+}
+
+val promoteSafeMsi = tasks.register<Exec>("promoteSafeMsi") {
+    dependsOn(patchMsiUninstallSafety)
+    commandLine(
+        "powershell.exe",
+        "-NoProfile",
+        "-ExecutionPolicy",
+        "Bypass",
+        "-File",
+        layout.projectDirectory.file("scripts/promote-safe-msi.ps1").asFile.absolutePath,
+        msiArtifact.get().asFile.absolutePath
+    )
+}
+
+tasks.configureEach {
+    if (name == "packageMsi") finalizedBy(promoteSafeMsi)
 }

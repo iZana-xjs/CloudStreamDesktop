@@ -218,7 +218,10 @@ fun MediaDetailsScreen(
         loadDetails()
     }
 
-    fun startResolvingLinks(ep: Episode? = null, resumeAtMs: Long? = pendingResumePositionMs) {
+    fun startResolvingLinks(
+        ep: Episode? = null,
+        resumeAtMs: Long? = if (ep == null) pendingResumePositionMs else null
+    ) {
         pendingResumePositionMs = resumeAtMs?.takeIf { it > 5_000L }
         resolvingEpisode = ep
         isResolvingSources = true
@@ -288,6 +291,11 @@ fun MediaDetailsScreen(
 
     fun playResolvedSource(source: ExtractorLink, startAtMs: Long = 0L) {
         val episode = resolvingEpisode
+        // Continue Watching is a one-shot navigation request. Clear it from
+        // the underlying details entry before pushing Player, or Back recreates
+        // this screen with the old resume payload and auto-starts the episode
+        // again, making it feel impossible to leave playback.
+        NavigationManager.consumeCurrentResumeIntent(url, apiName)
         NavigationManager.navigate(
             NavDestination.Player(
                 url = url,
@@ -339,6 +347,7 @@ fun MediaDetailsScreen(
         } else null
 
         if (item is TvSeriesLoadResponse && resumeEpisode == null) {
+            pendingResumePositionMs = null
             NotificationService.warning(
                 "Could not resume saved episode",
                 "The saved season and episode could not be found. Open the episode list and choose an episode to play."
@@ -353,7 +362,18 @@ fun MediaDetailsScreen(
         // Continue as soon as the first playable mirror is available. Give the
         // provider a brief moment to return nearby mirrors so quality selection
         // can still choose the best result without waiting for every resolver.
-        snapshotFlow { foundSources.isNotEmpty() }.first { it }
+        // Also finish when resolution completes with zero links. Without this,
+        // the saved resume intent stays armed and can unexpectedly autoplay an
+        // older episode after the user manually chooses another one later.
+        // Wait until the resume-triggered link request has actually started;
+        // otherwise the initial idle state could consume the request too soon.
+        snapshotFlow { isResolvingSources || foundSources.isNotEmpty() }.first { it }
+        snapshotFlow { foundSources.isNotEmpty() || !isResolvingSources }.first { it }
+        if (pendingResumePositionMs != resumeAt) return@LaunchedEffect
+        if (foundSources.isEmpty()) {
+            pendingResumePositionMs = null
+            return@LaunchedEffect
+        }
         delay(300)
         if (pendingResumePositionMs != resumeAt) return@LaunchedEffect
         val sources = foundSources.toList()

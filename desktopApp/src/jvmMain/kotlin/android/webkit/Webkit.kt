@@ -1,7 +1,18 @@
 package android.webkit
 
 import android.content.Context
+import android.net.Uri
 import android.view.View
+
+/** JVM-side API shape used when loading Android-authored extension classes. */
+interface WebResourceRequest {
+    fun getUrl(): Uri
+    fun isForMainFrame(): Boolean
+    fun isRedirect(): Boolean
+    fun hasGesture(): Boolean
+    fun getMethod(): String
+    fun getRequestHeaders(): Map<String, String>
+}
 
 open class CookieManager {
     companion object {

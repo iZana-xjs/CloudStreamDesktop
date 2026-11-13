@@ -23,8 +23,10 @@ import java.io.File
 import java.net.URI
 import java.nio.file.Paths
 import java.util.concurrent.Executors
+import java.util.concurrent.CompletableFuture
 import java.util.concurrent.ScheduledFuture
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicLong
 import java.util.concurrent.atomic.AtomicReference
 import java.awt.Component
 import javax.swing.JComponent
@@ -117,6 +119,16 @@ fun nextDecoderRetryPlan(
 object DesktopPlayer {
     private var factory: MediaPlayerFactory? = null
     private val initializationLock = Any()
+    /** Serialize player lifecycle work away from Compose/AWT event threads. */
+    private val lifecycleExecutor = Executors.newSingleThreadExecutor { task ->
+        Thread(task, "CloudStream-player-lifecycle").apply { isDaemon = true }
+    }
+    /** Delay LibVLC error handling long enough to distinguish transient demux/decoder errors from a failed stream. */
+    private val playbackErrorScheduler = Executors.newSingleThreadScheduledExecutor { task ->
+        Thread(task, "CloudStream-player-error-watchdog").apply { isDaemon = true }
+    }
+    private val playRequestGeneration = AtomicLong(0L)
+    private val errorScheduledForSession = AtomicLong(-1L)
 
     /**
      * Counts surface paints as a best-effort rendered-frame signal: vlcj's
@@ -202,7 +214,7 @@ object DesktopPlayer {
      * playback. Automatic recovery steps through one alternate Windows
      * hardware backend, then software decoding, so retries cannot loop.
      */
-    private var playbackSessionId = 0L
+    @Volatile private var playbackSessionId = 0L
     /** Windows backend override; null is the default D3D11VA path (or software when HW is off). */
     @Volatile private var activeHardwareBackend: String? = null
 
@@ -343,6 +355,9 @@ object DesktopPlayer {
         return initializeInternal(wantsHardware())
     }
 
+    fun initializeAsync(): CompletableFuture<JComponent?> =
+        CompletableFuture.supplyAsync({ initialize() }, lifecycleExecutor)
+
     private fun initializeInternal(hardware: Boolean, hardwareBackend: String? = null): JComponent? {
         if (!isVlcAvailable) {
             println("VLC native libraries not found on this system. Playback will run in fallback mode.")
@@ -482,9 +497,51 @@ object DesktopPlayer {
             }
 
             override fun error(mediaPlayer: MediaPlayer) {
-                SwingUtilities.invokeLater {
-                    lastError = "Playback error — stream or codec rejected by VLC. Trying compatibility renderer may help."
-                }
+                if (mediaPlayer !== activePlayer()) return
+                // LibVLC can emit an error while probing a stream or changing
+                // tracks even when playback recovers. Do not immediately show
+                // a scary banner or claim a retry is happening: wait briefly,
+                // then check whether this session has actually rendered video.
+                val errorSession = playbackSessionId
+                if (errorScheduledForSession.getAndSet(errorSession) == errorSession) return
+                val startPositionMs = currentTimeMs
+                val startPaintCount = framePaintCount()
+                playbackErrorScheduler.schedule({
+                    if (errorSession != playbackSessionId) return@schedule
+                    SwingUtilities.invokeLater {
+                        if (errorSession != playbackSessionId) return@invokeLater
+                        val renderedSinceError = framePaintCount() > startPaintCount
+                        val playbackAdvanced = currentTimeMs > startPositionMs
+                        if (renderedSinceError || (hasVideo && isPlaying && playbackAdvanced)) {
+                            // A decoder/demux warning was transient; the active
+                            // stream is producing output, so keep the UI clear.
+                            if (!isBuffering) lastError = null
+                            return@invokeLater
+                        }
+
+                        val retryPlan = nextDecoderRetryPlan(
+                            hardware = usingHardwareDecoding,
+                            hardwareBackend = activeHardwareBackend,
+                            isWindows = System.getProperty("os.name").startsWith("Windows", ignoreCase = true)
+                        )
+                        if (retryPlan != null) {
+                            val message = if (retryPlan.hardware) {
+                                "Video output did not start. Retrying with VLC's alternate hardware decoder…"
+                            } else {
+                                describeVideoStarvation(videoCodecFourcc, softwareFallbackAttempted = false)
+                            }
+                            replayWithDecoder(retryPlan.hardware, retryPlan.hardwareBackend, message)
+                        } else {
+                            isPlaying = false
+                            isBuffering = false
+                            lastError = buildString {
+                                append("VLC could not start video for this source after trying available decoder modes.")
+                                videoCodecFourcc?.takeIf(String::isNotBlank)?.let { append(" Video codec: ").append(it).append('.') }
+                                append(" Try another source or check your connection.")
+                            }
+                        }
+                    }
+                }, 3, TimeUnit.SECONDS)
             }
         })
     }
@@ -568,6 +625,8 @@ object DesktopPlayer {
         currentStreamHeaders = headers.toMap()
         currentTimeMs = 0L
         position = 0f
+        isPlaying = false
+        isBuffering = true
         tracksReady = false
         hasVideo = false
         videoCodecFourcc = null
@@ -595,7 +654,7 @@ object DesktopPlayer {
         if (player != null) {
             val accepted = player.media().play(vlcUrl, *buildMediaOptions(currentStreamHeaders))
             if (!accepted) {
-                lastError = "VLC rejected this media URL. Check the source address and required HTTP headers."
+                lastError = "VLC could not open this source. It may have expired or require unavailable access headers. Try another source."
                 isPlaying = false
                 isBuffering = false
                 return
@@ -646,22 +705,52 @@ object DesktopPlayer {
         } else {
             // Simulated playback state for environments where VLC native libs are unavailable
             isPlaying = true
+            isBuffering = false
             totalDurationMs = 3600_000L // 1 hour simulated
         }
+    }
+
+    /** Queue stream setup so native VLC and network work never blocks Compose. */
+    fun playAsync(
+        url: String,
+        title: String,
+        episodeTitle: String? = null,
+        startMs: Long = 0L,
+        forceHardwareRenderer: Boolean? = null,
+        headers: Map<String, String> = emptyMap()
+    ): CompletableFuture<Void> {
+        val request = playRequestGeneration.incrementAndGet()
+        val safeHeaders = headers.toMap()
+        isBuffering = true
+        return CompletableFuture.runAsync({
+            if (request == playRequestGeneration.get()) {
+                play(url, title, episodeTitle, startMs, forceHardwareRenderer, safeHeaders)
+            }
+        }, lifecycleExecutor)
     }
 
     /** Session-scoped decoder replay: rebuilds only this playback's pipeline. */
     private fun replayWithDecoder(hardware: Boolean, hardwareBackend: String? = null, retryMessage: String? = null) {
         val url = currentMediaUrl ?: return
         val resumeMs = currentTimeMs
-        releasePlayer()
-        play(
-            url, currentTitle, currentEpisodeTitle, resumeMs,
-            forceHardwareRenderer = hardware,
-            headers = currentStreamHeaders,
-            forceHardwareBackend = hardwareBackend
-        )
-        if (retryMessage != null) lastError = retryMessage
+        val title = currentTitle
+        val episode = currentEpisodeTitle
+        val headers = currentStreamHeaders.toMap()
+        val expectedSession = playbackSessionId
+        val request = playRequestGeneration.incrementAndGet()
+        lifecycleExecutor.execute {
+            if (request != playRequestGeneration.get() || expectedSession != playbackSessionId) return@execute
+            releasePlayer()
+            play(
+                url, title, episode, resumeMs,
+                forceHardwareRenderer = hardware,
+                headers = headers,
+                forceHardwareBackend = hardwareBackend
+            )
+            // Keep VLC's definitive media-open error if play() rejected the
+            // retried URL; only show the retry notice while a retry is active.
+            if (retryMessage != null && (isBuffering || isPlaying)) lastError = retryMessage
+        }
     }
 
     /** Black-screen recovery: tear down and replay with the opposite decoder mode. */
@@ -817,11 +906,19 @@ object DesktopPlayer {
 
     fun stop() {
         clearSeeking()
-        activePlayer()?.controls()?.stop()
+        val player = activePlayer()
+        playbackSessionId++
+        val request = playRequestGeneration.incrementAndGet()
         pendingStartMs = 0L
         isPlaying = false
-        position = 0f
-        currentTimeMs = 0L
+        isBuffering = false
+        if (player != null) {
+            lifecycleExecutor.execute {
+                if (request == playRequestGeneration.get() && activePlayer() === player) {
+                    runCatching { player.controls().stop() }
+                }
+            }
+        }
     }
 
     private fun releasePlayer() {
@@ -835,6 +932,14 @@ object DesktopPlayer {
     fun release() {
         releasePlayer()
         runCatching { seekScheduler.shutdown() }
+        runCatching { playbackErrorScheduler.shutdown() }
+    }
+
+    /** Queue native VLC teardown; callers should not block the window thread. */
+    fun releaseAsync(): CompletableFuture<Void> {
+        playRequestGeneration.incrementAndGet()
+        playbackSessionId++
+        return CompletableFuture.runAsync({ release() }, lifecycleExecutor)
     }
 
     /** Called when the Hardware Acceleration toggle changes so the next play uses the right path. */
@@ -844,10 +949,17 @@ object DesktopPlayer {
             val url = currentMediaUrl
             val resumeMs = currentTimeMs
             val wasPlaying = isPlaying
-            releasePlayer()
-            initializeInternal(hardware)
-            if (url != null && wasPlaying) {
-                play(url, currentTitle, currentEpisodeTitle, resumeMs)
+            val title = currentTitle
+            val episode = currentEpisodeTitle
+            val headers = currentStreamHeaders.toMap()
+            val request = playRequestGeneration.incrementAndGet()
+            lifecycleExecutor.execute {
+                if (request != playRequestGeneration.get()) return@execute
+                releasePlayer()
+                initializeInternal(hardware)
+                if (url != null && wasPlaying) {
+                    play(url, title, episode, resumeMs, headers = headers)
+                }
             }
         }
     }

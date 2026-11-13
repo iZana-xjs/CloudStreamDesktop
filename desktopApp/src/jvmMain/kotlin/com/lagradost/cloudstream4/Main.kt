@@ -1,6 +1,15 @@
 package com.lagradost.cloudstream4
 
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.Surface
+import androidx.compose.material3.Text
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.padding
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -17,6 +26,9 @@ import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.type
 import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.Modifier
 import androidx.compose.ui.window.Window
 import androidx.compose.ui.window.WindowPlacement
 import androidx.compose.ui.window.application
@@ -47,6 +59,7 @@ import java.awt.KeyboardFocusManager
 import java.awt.KeyEventDispatcher
 import java.awt.event.KeyEvent as AwtKeyEvent
 import javax.swing.SwingUtilities
+import java.util.concurrent.TimeUnit
 
 fun main() {
     // Compose interop blending lets the Compose player HUD draw over VLC's Swing surface.
@@ -61,6 +74,7 @@ fun main() {
     var fullscreenDevice by remember { mutableStateOf<GraphicsDevice?>(null) }
     var boundsBeforeFullscreen by remember { mutableStateOf<Rectangle?>(null) }
     var frameStateBeforeFullscreen by remember { mutableIntStateOf(Frame.NORMAL) }
+    var isClosing by remember { mutableStateOf(false) }
 
     fun exitFullscreen(): Boolean {
         val target = appWindow
@@ -134,7 +148,7 @@ fun main() {
 
     LaunchedEffect(Unit) {
         launch(Dispatchers.IO) {
-            DesktopPlayer.initialize()
+            DesktopPlayer.initializeAsync()
             DesktopPluginManager.initialize()
             // Auto-update extensions on launch when enabled, then re-check
             // periodically while the app stays open/active.
@@ -205,8 +219,13 @@ fun main() {
 
     Window(
         onCloseRequest = {
-            DesktopPlayer.release()
-            exitApplication()
+            if (!isClosing) {
+                isClosing = true
+                appWindow?.isEnabled = false
+                DesktopPlayer.releaseAsync()
+                    .orTimeout(2500, TimeUnit.MILLISECONDS)
+                    .whenComplete { _, _ -> SwingUtilities.invokeLater { exitApplication() } }
+            }
         },
         state = windowState,
         title = "CloudStream Desktop",
@@ -340,21 +359,40 @@ fun main() {
 
         CloudStreamTheme(mode = themeMode) {
             CompositionLocalProvider(LocalFocusOutlineDefault provides false) {
-                DesktopShell(
-                    settings = settings,
-                    onSettingsChanged = {
-                        settings = it
-                        DesktopPlayer.onSettingsChanged()
-                    },
-                    isFullscreen = isFullscreen,
-                    onToggleFullscreen = {
-                        toggleFullscreen()
-                    },
-                    onForceExitFullscreen = {
-                        forceExitFullscreen()
-                    },
-                    onPlayerBack = { leavePlayer() }
-                )
+                Box(Modifier.fillMaxSize()) {
+                    DesktopShell(
+                        settings = settings,
+                        onSettingsChanged = {
+                            settings = it
+                            DesktopPlayer.onSettingsChanged()
+                        },
+                        isFullscreen = isFullscreen,
+                        onToggleFullscreen = {
+                            toggleFullscreen()
+                        },
+                        onForceExitFullscreen = {
+                            forceExitFullscreen()
+                        },
+                        onPlayerBack = { leavePlayer() }
+                    )
+                    if (isClosing) {
+                        Box(
+                            Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.72f)),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Surface(color = MaterialTheme.colorScheme.surface, shape = androidx.compose.foundation.shape.RoundedCornerShape(16.dp)) {
+                                Row(
+                                    modifier = Modifier.padding(horizontal = 24.dp, vertical = 18.dp),
+                                    horizontalArrangement = Arrangement.spacedBy(14.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    CircularProgressIndicator(modifier = Modifier.padding(2.dp), strokeWidth = 2.dp)
+                                    Text("Closing CloudStream…")
+                                }
+                            }
+                        }
+                    }
+                }
             }
         }
     }

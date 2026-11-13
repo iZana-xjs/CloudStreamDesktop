@@ -79,6 +79,8 @@ fun ExtensionsScreen(modifier: Modifier = Modifier) {
     val repositoryRevision by DesktopStorage.repositoryRevision.collectAsState()
 
     var selectedRepo by remember { mutableStateOf(repositories.firstOrNull()) }
+    var repoRequestId by remember { mutableIntStateOf(0) }
+    var lastMarketplaceRepoUrl by remember { mutableStateOf<String?>(null) }
     var isLoadingRepo by remember { mutableStateOf(false) }
     var repoLoadError by remember { mutableStateOf<String?>(null) }
     val remotePlugins = remember { mutableStateListOf<RemotePlugin>() }
@@ -92,6 +94,7 @@ fun ExtensionsScreen(modifier: Modifier = Modifier) {
     val providerSearchFocusRequester = remember { FocusRequester() }
 
     var showAddRepoDialog by remember { mutableStateOf(false) }
+    var showRemoveRepoDialog by remember { mutableStateOf(false) }
     var newRepoName by remember { mutableStateOf("") }
     var newRepoUrl by remember { mutableStateOf("") }
     var isAddingRepo by remember { mutableStateOf(false) }
@@ -107,11 +110,21 @@ fun ExtensionsScreen(modifier: Modifier = Modifier) {
     fun loadRepoPlugins(repo: StoredRepository?) {
         if (repo == null) return
         selectedRepo = repo
+        if (lastMarketplaceRepoUrl != repo.url) {
+            lastMarketplaceRepoUrl = repo.url
+            selectedLanguage = "All"
+            selectedCategory = "All"
+            selectedStatus = "All"
+            searchQuery = ""
+            remotePlugins.clear()
+        }
+        val requestId = ++repoRequestId
         isLoadingRepo = true
         repoLoadError = null
         scope.launch {
             val result = runCatching { DesktopPluginManager.fetchRepoPlugins(repo) }
             withContext(Dispatchers.Main) {
+                if (requestId != repoRequestId || selectedRepo?.url != repo.url) return@withContext
                 remotePlugins.clear()
                 result.onSuccess { remotePlugins.addAll(it) }
                     .onFailure { repoLoadError = it.message ?: "Could not load this repository." }
@@ -120,9 +133,13 @@ fun ExtensionsScreen(modifier: Modifier = Modifier) {
         }
     }
 
-    LaunchedEffect(selectedRepo) {
+    LaunchedEffect(selectedRepo?.url, selectedTab) {
         if (selectedTab == 1 && selectedRepo != null) {
             loadRepoPlugins(selectedRepo)
+        } else if (selectedRepo == null) {
+            repoRequestId++
+            remotePlugins.clear()
+            isLoadingRepo = false
         }
     }
 
@@ -268,7 +285,6 @@ fun ExtensionsScreen(modifier: Modifier = Modifier) {
                             if (selectedRepo == null && repositories.isNotEmpty()) {
                                 selectedRepo = repositories.first()
                             }
-                            loadRepoPlugins(selectedRepo)
                         }
                         .pointerHoverIcon(PointerIcon.Hand)
                         .padding(horizontal = 20.dp, vertical = 8.dp)
@@ -443,7 +459,10 @@ fun ExtensionsScreen(modifier: Modifier = Modifier) {
                                     color = if (isSelected) Color.White else Color(0x22FFFFFF),
                                     shape = ShiopaStyle.PillShape
                                 )
-                                .clickable { loadRepoPlugins(repo) }
+                                .clickable {
+                                    if (selectedRepo?.url == repo.url) loadRepoPlugins(repo)
+                                    else selectedRepo = repo
+                                }
                                 .pointerHoverIcon(PointerIcon.Hand)
                                 .padding(horizontal = 14.dp, vertical = 7.dp)
                         ) {
@@ -454,6 +473,12 @@ fun ExtensionsScreen(modifier: Modifier = Modifier) {
                                 color = if (isSelected) Color.Black else Color(0xFFCCCCCC)
                             )
                         }
+                    }
+                }
+                if (selectedRepo != null) {
+                    Spacer(modifier = Modifier.width(10.dp))
+                    TextButton(onClick = { showRemoveRepoDialog = true }) {
+                        Text("Remove repository", color = ShiopaStyle.TextSecondary, fontSize = 12.sp)
                     }
                 }
             }
@@ -733,7 +758,6 @@ fun ExtensionsScreen(modifier: Modifier = Modifier) {
                                         repositories.clear()
                                         repositories.addAll(DesktopStorage.getRepositories())
                                         selectedRepo = repo
-                                        loadRepoPlugins(repo)
                                         showAddRepoDialog = false
                                         newRepoName = ""
                                         newRepoUrl = ""
@@ -768,6 +792,32 @@ fun ExtensionsScreen(modifier: Modifier = Modifier) {
             },
             containerColor = Color(0xFF14141A),
             shape = ShiopaStyle.CardLargeShape
+        )
+    }
+
+    if (showRemoveRepoDialog) {
+        val repoToRemove = selectedRepo
+        AlertDialog(
+            onDismissRequest = { showRemoveRepoDialog = false },
+            title = { Text("Remove repository?", color = ShiopaStyle.TextPrimary) },
+            text = {
+                Text(
+                    "Remove ${repoToRemove?.name ?: "this repository"} from the marketplace list? Extensions already installed from it will remain installed.",
+                    color = ShiopaStyle.TextSecondary
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    if (repoToRemove != null) DesktopStorage.removeRepository(repoToRemove.url)
+                    showRemoveRepoDialog = false
+                }) { Text("Remove", color = ShiopaStyle.AccentMainBright) }
+            },
+            dismissButton = {
+                TextButton(onClick = { showRemoveRepoDialog = false }) {
+                    Text("Cancel", color = ShiopaStyle.TextSecondary)
+                }
+            },
+            containerColor = ShiopaStyle.SurfaceCard
         )
     }
 }

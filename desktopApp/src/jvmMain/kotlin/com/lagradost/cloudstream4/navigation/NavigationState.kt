@@ -168,6 +168,25 @@ object NavigationManager {
         currentDestination = destination
     }
 
+    /**
+     * Consume a Continue Watching resume intent before entering playback.
+     * Keep the detail page in history, but clear its one-shot resume payload so
+     * pressing Back cannot immediately start the same episode again.
+     */
+    fun consumeCurrentResumeIntent(url: String, apiName: String): Boolean {
+        val current = backStack.lastOrNull() as? NavDestination.MediaDetails ?: return false
+        if (current.url != url || current.apiName != apiName || current.resumePositionMs <= 5_000L) return false
+        val cleared = current.copy(
+            resumePositionMs = 0L,
+            resumeEpisodeIndex = null,
+            resumeSeasonIndex = null,
+            resumeEpisodeTitle = null
+        )
+        backStack[backStack.lastIndex] = cleared
+        if (currentDestination == current) currentDestination = cleared
+        return true
+    }
+
     fun goBack(): Boolean {
         if (backStack.size > 1) {
             backStack.removeAt(backStack.size - 1)

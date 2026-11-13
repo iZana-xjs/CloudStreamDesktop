@@ -69,13 +69,21 @@ fun requireTrustedHttpsUrl(rawUrl: String): String {
 
 /** Keep remote plugin names from escaping the plugin storage/cache directories. */
 fun isSafePluginInternalName(value: String): Boolean =
-    value.matches(Regex("[A-Za-z0-9][A-Za-z0-9._-]{0,127}")) && ".." !in value
+    value.matches(Regex("[A-Za-z0-9][A-Za-z0-9._ -]{0,127}")) &&
+        ".." !in value && !value.endsWith('.') && !value.endsWith(' ')
+
+/** Resolve repository entries that sometimes contain unescaped spaces in filenames. */
+internal fun resolveRepositoryResourceUrl(baseUrl: String, rawUrl: String): String {
+    val sanitized = rawUrl.trim().replace(" ", "%20")
+    val resolved = java.net.URI(baseUrl).resolve(java.net.URI(sanitized)).toASCIIString()
+    return requireTrustedHttpsUrl(resolved)
+}
 
 object DesktopPluginManager {
     private const val MAX_PLUGIN_ARCHIVE_BYTES = 100L * 1024L * 1024L
     val pluginsState = kotlinx.coroutines.flow.MutableStateFlow(0)
 
-    /** Plugins with a newer remote version than the installed copy. Observed by UI badges. */
+    /** Plugins needing a newer version or a same-version archive refresh. */
     val availableUpdates = kotlinx.coroutines.flow.MutableStateFlow<List<PluginUpdateInfo>>(emptyList())
     var lastUpdateCheckMs: Long = 0L
         private set
@@ -106,11 +114,21 @@ object DesktopPluginManager {
         }
 
         // Load all saved, enabled plugins
-        val installed = DesktopStorage.getInstalledPlugins()
+        val savedPlugins = DesktopStorage.getInstalledPlugins()
+        // Older builds could persist absolute paths into the legacy D:\ data directory.
+        // Prefer the migrated, app-owned archive when present and repair the record so
+        // subsequent starts and enable/disable actions use the same copy.
+        val installed = savedPlugins.map { plugin ->
+            val managedFile = managedPluginFile(plugin.internalName)
+            if (managedFile?.isFile == true && !samePath(plugin.filePath, managedFile)) {
+                plugin.copy(filePath = managedFile.absolutePath)
+            } else plugin
+        }
+        if (installed != savedPlugins) DesktopStorage.saveInstalledPlugins(installed)
         for (plugin in installed) {
             if (plugin.enabled) {
                 try {
-                    val file = File(plugin.filePath)
+                    val file = resolveInstalledArchive(plugin)
                     if (file.exists()) {
                         loadPluginFromFile(file, plugin.internalName)
                     }
@@ -265,14 +283,19 @@ object DesktopPluginManager {
                 if (repoIndex.pluginLists.isEmpty()) throw IllegalStateException("The repository manifest contains no plugin lists")
                 for (rawListUrl in repoIndex.pluginLists) {
                     try {
-                        val resolvedListUrl = requireTrustedHttpsUrl(java.net.URI(workingUrl).resolve(rawListUrl).toString())
+                        val resolvedListUrl = resolveRepositoryResourceUrl(workingUrl, rawListUrl)
                         val listResponse = app.get(resolvedListUrl)
                         requireTrustedHttpsUrl(listResponse.okhttpResponse.request.url.toString())
                         val pluginsJson = listResponse.text
                         val plugins = desktopJson.decodeFromString<List<RemotePlugin>>(pluginsJson)
                         for (p in plugins) {
-                            val absolutePluginUrl = requireTrustedHttpsUrl(java.net.URI(resolvedListUrl).resolve(p.url).toString())
-                            result.add(p.copy(url = absolutePluginUrl))
+                            runCatching {
+                                val absolutePluginUrl = resolveRepositoryResourceUrl(resolvedListUrl, p.url)
+                                result.add(p.copy(url = absolutePluginUrl))
+                            }.onFailure { error ->
+                                manifestError = error
+                                println("Skipping invalid plugin URL for ${p.internalName}: ${error.message}")
+                            }
                         }
                     } catch (e: Throwable) {
                         manifestError = e
@@ -284,8 +307,13 @@ object DesktopPluginManager {
             } else {
                 val plugins = desktopJson.decodeFromString<List<RemotePlugin>>(fetchedResponse)
                 for (p in plugins) {
-                    val absolutePluginUrl = requireTrustedHttpsUrl(java.net.URI(workingUrl).resolve(p.url).toString())
-                    result.add(p.copy(url = absolutePluginUrl))
+                    runCatching {
+                        val absolutePluginUrl = resolveRepositoryResourceUrl(workingUrl, p.url)
+                        result.add(p.copy(url = absolutePluginUrl))
+                    }.onFailure { error ->
+                        manifestError = error
+                        println("Skipping invalid plugin URL for ${p.internalName}: ${error.message}")
+                    }
                 }
             }
         } catch (e: Throwable) {
@@ -476,7 +504,7 @@ object DesktopPluginManager {
     suspend fun togglePlugin(internalName: String, enable: Boolean): Boolean = withContext(Dispatchers.IO) {
         val plugin = DesktopStorage.getInstalledPlugins().find { it.internalName == internalName } ?: return@withContext false
         if (enable) {
-            val file = File(plugin.filePath)
+            val file = resolveInstalledArchive(plugin)
             if (file.exists() && loadPluginFromFile(file, internalName)) {
                 DesktopStorage.savePlugin(plugin.copy(enabled = true))
                 NotificationService.success("Enabled ${plugin.name}")
@@ -497,7 +525,8 @@ object DesktopPluginManager {
 
     /**
      * Compare installed plugins against every configured repository and return
-     * entries where the repository advertises a strictly newer version.
+     * entries where a newer version is advertised or the installed archive's
+     * checksum differs from the repository's checksum for the same version.
      * Failures for individual repos are skipped so one dead mirror never
      * blocks updates from the others.
      */
@@ -525,13 +554,52 @@ object DesktopPluginManager {
         }
         val updates = installed.mapNotNull { local ->
             val remote = latestById[local.internalName]
-            if (remote != null && remote.version > local.version) {
+            if (remote != null && pluginNeedsRefresh(local, remote)) {
                 PluginUpdateInfo(installed = local, remote = remote)
             } else null
         }
         availableUpdates.value = updates
         lastUpdateCheckMs = System.currentTimeMillis()
         updates
+    }
+
+    private fun managedPluginFile(internalName: String): File? {
+        if (!isSafePluginInternalName(internalName)) return null
+        return File(AppPaths.pluginsDir, "$internalName.cs3")
+    }
+
+    private fun samePath(storedPath: String, file: File): Boolean {
+        val stored = runCatching { File(storedPath).canonicalFile }.getOrNull() ?: return false
+        val managed = runCatching { file.canonicalFile }.getOrNull() ?: return false
+        return stored == managed
+    }
+
+    private fun resolveInstalledArchive(plugin: StoredPlugin): File {
+        val managed = managedPluginFile(plugin.internalName)
+        return if (managed?.isFile == true) managed else File(plugin.filePath)
+    }
+
+    private fun pluginNeedsRefresh(local: StoredPlugin, remote: RemotePlugin): Boolean {
+        if (remote.version > local.version) return true
+        if (remote.version < local.version || remote.fileHash.isNullOrBlank()) return false
+
+        val expected = remote.fileHash.removePrefix("sha256-").trim()
+        if (!expected.matches(Regex("[0-9a-fA-F]{64}"))) return false
+        val archive = resolveInstalledArchive(local)
+        if (!archive.isFile) return true
+        val actual = runCatching {
+            val digest = MessageDigest.getInstance("SHA-256")
+            archive.inputStream().buffered().use { input ->
+                val buffer = ByteArray(16 * 1024)
+                while (true) {
+                    val count = input.read(buffer)
+                    if (count < 0) break
+                    digest.update(buffer, 0, count)
+                }
+            }
+            digest.digest().joinToString("") { "%02x".format(it) }
+        }.getOrNull() ?: return true
+        return !actual.equals(expected, ignoreCase = true)
     }
 
     data class AutoUpdateResult(
@@ -555,7 +623,10 @@ object DesktopPluginManager {
         pending.forEachIndexed { index, info ->
             onProgress(index, pending.size, info.installed.name)
             try {
-                NotificationService.info("Updating ${info.installed.name} (v${info.installed.version} → v${info.remote.version})...")
+                val updateLabel = if (info.remote.version > info.installed.version) {
+                    "v${info.installed.version} → v${info.remote.version}"
+                } else "refreshing v${info.installed.version}"
+                NotificationService.info("Updating ${info.installed.name} ($updateLabel)...")
                 val ok = installPlugin(info.remote, null, enabledAfterInstall = info.installed.enabled)
                 if (ok) updated++ else failed.add(info.installed.name)
             } catch (e: Throwable) {

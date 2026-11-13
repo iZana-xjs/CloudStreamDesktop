@@ -66,6 +66,7 @@ import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.pointer.PointerEventType
 import androidx.compose.ui.input.pointer.pointerInput
@@ -131,10 +132,24 @@ fun PlayerScreen(
 ) {
     var controlsVisible by remember { mutableStateOf(true) }
     var lastInteractionTime by remember { mutableStateOf(System.currentTimeMillis()) }
+    var showLoadingIndicator by remember { mutableStateOf(false) }
     val revealControls = remember {
         {
             controlsVisible = true
             lastInteractionTime = System.currentTimeMillis()
+        }
+    }
+
+    // VLC can emit very short buffering/cache events while switching tracks or
+    // settling a seek. Keep the loading affordance truthful without flashing:
+    // show it after a short sustained wait, hide it promptly when output resumes.
+    LaunchedEffect(DesktopPlayer.isBuffering, DesktopPlayer.isSeeking) {
+        if (DesktopPlayer.isBuffering || DesktopPlayer.isSeeking) {
+            delay(220)
+            showLoadingIndicator = DesktopPlayer.isBuffering || DesktopPlayer.isSeeking
+        } else {
+            delay(120)
+            showLoadingIndicator = false
         }
     }
 
@@ -204,7 +219,7 @@ fun PlayerScreen(
     // Start playback on mount
     LaunchedEffect(url, mediaUrl) {
         val streamUrl = mediaUrl ?: url
-        DesktopPlayer.play(
+        DesktopPlayer.playAsync(
             url = streamUrl,
             title = title,
             episodeTitle = episodeTitle,
@@ -221,9 +236,21 @@ fun PlayerScreen(
     val videoComponent = DesktopPlayer.mediaPlayerComponent
     val videoSurface = DesktopPlayer.videoSurfaceComponent()
     DisposableEffect(videoSurface, revealControls) {
+        var lastMeaningfulPoint: java.awt.Point? = null
+        fun onMeaningfulMove(event: MouseEvent) {
+            val point = event.point
+            val previous = lastMeaningfulPoint
+            // Compare to the last accepted point (not the prior raw event) so
+            // sub-pixel/one-pixel cursor vibration cannot keep controls alive,
+            // while gradual deliberate movement still crosses the threshold.
+            if (previous == null || previous.distanceSq(point) >= 25.0) {
+                lastMeaningfulPoint = point
+                revealControls()
+            }
+        }
         val activityListener = object : MouseAdapter() {
             override fun mouseEntered(event: MouseEvent) = revealControls()
-            override fun mouseMoved(event: MouseEvent) = revealControls()
+            override fun mouseMoved(event: MouseEvent) = onMeaningfulMove(event)
             override fun mouseDragged(event: MouseEvent) = revealControls()
             override fun mousePressed(event: MouseEvent) = revealControls()
         }
@@ -235,10 +262,15 @@ fun PlayerScreen(
         }
     }
 
-    // Auto-hide controls after 3.5 seconds of inactivity
-    LaunchedEffect(lastInteractionTime, controlsVisible) {
-        if (controlsVisible) {
-            delay(3500)
+    // OTT-style behavior: hide shortly after active playback goes idle; keep
+    // controls available while paused, loading, or choosing a track/source.
+    LaunchedEffect(lastInteractionTime, controlsVisible, DesktopPlayer.isPlaying,
+        DesktopPlayer.isBuffering, showAudioDialog, showSubtitleDialog, showSpeedMenu,
+        showResizeMenu, showSourceDialog
+    ) {
+        val menuOpen = showAudioDialog || showSubtitleDialog || showSpeedMenu || showResizeMenu || showSourceDialog
+        if (controlsVisible && DesktopPlayer.isPlaying && !DesktopPlayer.isBuffering && !menuOpen) {
+            delay(1800)
             controlsVisible = false
         }
     }
@@ -273,8 +305,10 @@ fun PlayerScreen(
     // Stop playback on exit and persist the final resume position.
     DisposableEffect(Unit) {
         onDispose {
+            val finalPositionMs = DesktopPlayer.currentTimeMs
+            val finalDurationMs = DesktopPlayer.totalDurationMs
             DesktopPlayer.stop()
-            if (DesktopPlayer.currentTimeMs > 5000L && DesktopPlayer.totalDurationMs > 0L) {
+            if (finalPositionMs > 5000L && finalDurationMs > 0L) {
                 DesktopStorage.saveHistory(
                     HistoryItem(
                         url = url,
@@ -285,8 +319,8 @@ fun PlayerScreen(
                         episodeTitle = episodeTitle,
                         episodeIndex = episodeIndex,
                         seasonIndex = seasonIndex,
-                        positionMs = DesktopPlayer.currentTimeMs,
-                        durationMs = DesktopPlayer.totalDurationMs
+                        positionMs = finalPositionMs,
+                        durationMs = finalDurationMs
                     )
                 )
             }
@@ -299,10 +333,20 @@ fun PlayerScreen(
             .background(Color.Black)
             .pointerInput(Unit) {
                 awaitPointerEventScope {
+                    var lastMeaningfulPosition: Offset? = null
                     while (true) {
                         val event = awaitPointerEvent()
-                        if (event.type == PointerEventType.Move || event.type == PointerEventType.Press) {
+                        if (event.type == PointerEventType.Press) {
                             revealControls()
+                        } else if (event.type == PointerEventType.Move) {
+                            val point = event.changes.firstOrNull()?.position
+                            val previous = lastMeaningfulPosition
+                            if (point != null && (previous == null ||
+                                    (point - previous).getDistanceSquared() >= 25f)
+                            ) {
+                                lastMeaningfulPosition = point
+                                revealControls()
+                            }
                         }
                     }
                 }
@@ -345,9 +389,23 @@ fun PlayerScreen(
         }
 
         // Buffering Indicator (also covers seeking catch-up after coalesced seeks)
-        if (DesktopPlayer.isBuffering || DesktopPlayer.isSeeking) {
+        if (showLoadingIndicator) {
             Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                CircularProgressIndicator(color = playerAccentColor, modifier = Modifier.size(56.dp))
+                Column(
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(10.dp),
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(14.dp))
+                        .background(Color(0x990A0A0D))
+                        .padding(horizontal = 20.dp, vertical = 16.dp)
+                ) {
+                    CircularProgressIndicator(color = playerAccentColor, modifier = Modifier.size(44.dp))
+                    Text(
+                        text = if (DesktopPlayer.isSeeking) "Seeking…" else "Buffering…",
+                        color = Color.White.copy(alpha = 0.9f),
+                        style = MaterialTheme.typography.labelMedium
+                    )
+                }
             }
         }
 
@@ -1042,7 +1100,7 @@ fun PlayerScreen(
                                     text = "${source.name} · ${source.quality}p · ${source.type}${if (source.url == sortedPlaybackSources.firstOrNull()?.url) " · Recommended" else ""}${if (source.url == DesktopPlayer.currentMediaUrl) "  ✓ Playing" else ""}",
                                     modifier = Modifier.fillMaxWidth().clickable {
                                         showSourceDialog = false
-                                        DesktopPlayer.play(
+                                        DesktopPlayer.playAsync(
                                             source.url, title, episodeTitle, DesktopPlayer.currentTimeMs,
                                             headers = source.headers
                                         )

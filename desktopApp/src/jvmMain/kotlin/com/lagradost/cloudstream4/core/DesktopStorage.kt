@@ -872,9 +872,12 @@ object DesktopStorage {
 
     fun saveRepository(repo: StoredRepository) = addRepository(repo)
 
-    fun removeRepository(url: String) = lock.write {
-        val current = getRepositories().filterNot { it.url == url }
-        saveRepositories(current)
+    fun removeRepository(url: String) {
+        lock.write {
+            val current = getRepositories().filterNot { it.url == url }
+            saveRepositories(current)
+        }
+        notifyRepositoriesChanged()
     }
 
     // Installed Plugins

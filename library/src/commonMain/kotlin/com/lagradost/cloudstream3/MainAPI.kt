@@ -2598,12 +2598,20 @@ fun Episode.addDate(date: String?, format: String = "yyyy-MM-dd") {
                  * 2. If it has time but no offset (e.g. "2026-05-17 14:35"), fall back to device timezone
                  * 3. If it's date-only (e.g. "2026-05-17"), use start of day in device timezone
                  */
-                runCatching { components.toInstantUsingOffset().toEpochMilliseconds() }
-                    .recoverCatching { components.toLocalDateTime().toInstant(TimeZone.currentSystemDefault()).toEpochMilliseconds() }
-                    .getOrElse { components.toLocalDate().atStartOfDayIn(TimeZone.currentSystemDefault()).toEpochMilliseconds() }
+                if (components.hasExplicitUtcOffset()) {
+                    components.toInstantUsingOffset().toEpochMilliseconds()
+                } else if (components.hour != null) {
+                    components.toLocalDateTime().toInstant(TimeZone.currentSystemDefault()).toEpochMilliseconds()
+                } else {
+                    components.toLocalDate().atStartOfDayIn(TimeZone.currentSystemDefault()).toEpochMilliseconds()
+                }
             }
     }.onFailure { logError(it) }.getOrNull()
 }
+
+/** `toInstantUsingOffset()` assumes UTC when an offset is absent, so check first. */
+private fun DateTimeComponents.hasExplicitUtcOffset(): Boolean =
+    offsetHours != null || offsetMinutesOfHour != null || offsetSecondsOfMinute != null || offsetIsNegative != null
 
 fun Episode.addDate(date: LocalDate?) {
     this.date = date?.atStartOfDayIn(TimeZone.currentSystemDefault())?.toEpochMilliseconds()
@@ -2767,9 +2775,13 @@ fun isUpcoming(dateString: String?): Boolean {
          * 2. If it has time but no offset (e.g. "2026-05-17T14:35"), fall back to device timezone
          * 3. If it's date-only (e.g. "2026-05-17"), use start of day in device timezone
          */
-        val instant = runCatching { components.toInstantUsingOffset() }
-            .recoverCatching { components.toLocalDateTime().toInstant(TimeZone.currentSystemDefault()) }
-            .getOrElse { components.toLocalDate().atStartOfDayIn(TimeZone.currentSystemDefault()) }
+        val instant = if (components.hasExplicitUtcOffset()) {
+            components.toInstantUsingOffset()
+        } else if (components.hour != null) {
+            components.toLocalDateTime().toInstant(TimeZone.currentSystemDefault())
+        } else {
+            components.toLocalDate().atStartOfDayIn(TimeZone.currentSystemDefault())
+        }
         Clock.System.now() < instant
     }.onFailure { logError(it) }.getOrElse { false }
 }
