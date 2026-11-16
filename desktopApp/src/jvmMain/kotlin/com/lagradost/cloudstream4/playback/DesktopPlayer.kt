@@ -721,6 +721,18 @@ object DesktopPlayer {
     ): CompletableFuture<Void> {
         val request = playRequestGeneration.incrementAndGet()
         val safeHeaders = headers.toMap()
+        // Clear metadata synchronously with the new request. The player UI
+        // observes duration to trigger duration-dependent skip-marker lookup;
+        // retaining the previous stream's duration can cache a false miss for
+        // the new episode before VLC reports its actual length.
+        currentMediaUrl = normalizeMediaUrl(url)
+        currentTitle = title
+        currentEpisodeTitle = episodeTitle
+        currentTimeMs = 0L
+        position = 0f
+        totalDurationMs = 0L
+        isPlaying = false
+        lastError = null
         isBuffering = true
         return CompletableFuture.runAsync({
             if (request == playRequestGeneration.get()) {

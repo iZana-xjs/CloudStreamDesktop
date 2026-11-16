@@ -189,14 +189,30 @@ fun PlayerScreen(
         mutableStateOf(DesktopStorage.getSkipSegment(apiName ?: "", url, episodeIndex, seasonIndex))
     }
 
+    // Start playback before reading duration-dependent skip metadata. playAsync
+    // clears the old stream's duration immediately so the new episode cannot
+    // use a stale length (and cache a false AniSkip miss) while VLC is loading.
+    LaunchedEffect(url, mediaUrl) {
+        val streamUrl = mediaUrl ?: url
+        DesktopPlayer.playAsync(
+            url = streamUrl,
+            title = title,
+            episodeTitle = episodeTitle,
+            startMs = startPositionMs,
+            headers = mediaHeaders
+        )
+    }
+
     // Automatic skip markers: manual/persisted result first, then provider
-    // lookup off the UI thread. Re-runs when the episode identity changes
-    // and again once the duration is known (AniSkip needs episode length);
-    // cached hits make repeats cheap. Missing metadata or failures resolve
-    // to null — buttons stay hidden, playback never blocked.
-    val skipDurationKnown = DesktopPlayer.totalDurationMs > 0
-    LaunchedEffect(url, apiName, episodeIndex, seasonIndex, skipDurationKnown) {
+    // lookup off the UI thread. Retry when this stream's duration becomes
+    // available (AniSkip needs episode length). Never reuse a previous stream's
+    // duration. Missing metadata or service data simply hides the button.
+    val skipDurationKnown = DesktopPlayer.totalDurationMs > 0L &&
+        DesktopPlayer.currentTitle == title && DesktopPlayer.currentEpisodeTitle == episodeTitle
+    LaunchedEffect(url, apiName, episodeIndex, seasonIndex) {
         skipUsedKinds = emptySet()
+    }
+    LaunchedEffect(url, apiName, episodeIndex, seasonIndex, skipDurationKnown) {
         val fresh = withContext(Dispatchers.IO) {
             DesktopStorage.resolveEpisodeMarkers(
                 apiName = apiName ?: "",
@@ -214,18 +230,6 @@ fun PlayerScreen(
             )
         }
         if (fresh != null) skipRange = fresh
-    }
-
-    // Start playback on mount
-    LaunchedEffect(url, mediaUrl) {
-        val streamUrl = mediaUrl ?: url
-        DesktopPlayer.playAsync(
-            url = streamUrl,
-            title = title,
-            episodeTitle = episodeTitle,
-            startMs = startPositionMs,
-            headers = mediaHeaders
-        )
     }
 
     LaunchedEffect(isFullscreen) {
@@ -471,49 +475,6 @@ fun PlayerScreen(
             modifier = Modifier.fillMaxSize()
         ) {
             Box(modifier = Modifier.fillMaxSize()) {
-                // Skip Intro / Recap / Ending: upper-right overlay pill, shown
-                // only while a detected, usable segment plays. Single button
-                // only (Intro > Recap > Ending); hides at segment end, after
-                // use, on seek-out, and with the controls. Keyboard-focusable.
-                val skipButton = selectSkipButton(
-                    skipRange, DesktopPlayer.currentTimeMs,
-                    DesktopPlayer.totalDurationMs, skipUsedKinds
-                )
-                if (skipButton != null && skipRange != null) {
-                    val segmentEndMs = when (skipButton) {
-                        SkipButtonKind.INTRO -> skipRange!!.introEndMs
-                        SkipButtonKind.RECAP -> skipRange!!.recapEndMs
-                        SkipButtonKind.ENDING -> skipRange!!.endingEndMs
-                    }
-                    // Ending with a known next episode and autoplay enabled
-                    // lands at the credits tail so the normal finished flow
-                    // picks up promptly. (Full autoplay-advance of the next
-                    // episode's links is not implemented; see project notes.)
-                    val durationMs = DesktopPlayer.totalDurationMs
-                    val targetMs = if (skipButton == SkipButtonKind.ENDING &&
-                        hasNextEpisode && DesktopStorage.settings.autoPlayNextEpisode &&
-                        durationMs > 0
-                    ) {
-                        maxOf(segmentEndMs, durationMs - 2000L)
-                    } else segmentEndMs
-                    Column(
-                        modifier = Modifier.align(Alignment.TopEnd).padding(top = 108.dp, end = 20.dp),
-                        verticalArrangement = Arrangement.spacedBy(8.dp),
-                        horizontalAlignment = Alignment.End
-                    ) {
-                        SkipJumpButton(
-                            when (skipButton) {
-                                SkipButtonKind.INTRO -> "Skip Intro ▶"
-                                SkipButtonKind.RECAP -> "Skip Recap ▶"
-                                SkipButtonKind.ENDING -> "Skip Ending ▶"
-                            }
-                        ) {
-                            DesktopPlayer.seekToTime(targetMs)
-                            if (!DesktopPlayer.isPlaying) DesktopPlayer.togglePlay()
-                            skipUsedKinds = skipUsedKinds + skipButton.key
-                        }
-                    }
-                }
                 // Top Gradient & Header Bar
                 Box(
                     modifier = Modifier
@@ -915,6 +876,55 @@ fun PlayerScreen(
                             }
                         }
                     }
+                }
+            }
+        }
+
+        // Skip actions are independent of the auto-hiding transport controls.
+        // OTT skip prompts must appear as soon as the current playhead enters a
+        // known range, even if the mouse has been idle and the control bar has
+        // faded out. They still disappear at the segment end, after use, or
+        // when seeking outside the range.
+        val skipButton = selectSkipButton(
+            skipRange, DesktopPlayer.currentTimeMs,
+            DesktopPlayer.totalDurationMs, skipUsedKinds
+        )
+        AnimatedVisibility(
+            visible = skipButton != null && skipRange != null,
+            enter = fadeIn(),
+            exit = fadeOut(),
+            modifier = Modifier.fillMaxSize()
+        ) {
+            val activeButton = skipButton ?: return@AnimatedVisibility
+            val activeRange = skipRange ?: return@AnimatedVisibility
+            val segmentEndMs = when (activeButton) {
+                SkipButtonKind.INTRO -> activeRange.introEndMs
+                SkipButtonKind.RECAP -> activeRange.recapEndMs
+                SkipButtonKind.ENDING -> activeRange.endingEndMs
+            }
+            // Ending with a known next episode and autoplay enabled lands near
+            // the credits tail so the normal finished flow picks up promptly.
+            val durationMs = DesktopPlayer.totalDurationMs
+            val targetMs = if (activeButton == SkipButtonKind.ENDING &&
+                hasNextEpisode && DesktopStorage.settings.autoPlayNextEpisode && durationMs > 0
+            ) {
+                maxOf(segmentEndMs, durationMs - 2000L)
+            } else segmentEndMs
+            Column(
+                modifier = Modifier.fillMaxSize().padding(top = 108.dp, end = 20.dp),
+                verticalArrangement = Arrangement.Top,
+                horizontalAlignment = Alignment.End
+            ) {
+                SkipJumpButton(
+                    when (activeButton) {
+                        SkipButtonKind.INTRO -> "Skip Intro ▶"
+                        SkipButtonKind.RECAP -> "Skip Recap ▶"
+                        SkipButtonKind.ENDING -> "Skip Ending ▶"
+                    }
+                ) {
+                    DesktopPlayer.seekToTime(targetMs)
+                    if (!DesktopPlayer.isPlaying) DesktopPlayer.togglePlay()
+                    skipUsedKinds = skipUsedKinds + activeButton.key
                 }
             }
         }

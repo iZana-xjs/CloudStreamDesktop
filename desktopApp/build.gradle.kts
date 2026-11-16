@@ -51,7 +51,7 @@ compose.desktop {
         nativeDistributions {
             targetFormats(TargetFormat.Dmg, TargetFormat.Msi, TargetFormat.Deb)
             packageName = "CloudStream"
-            packageVersion = "1.0.4"
+            packageVersion = "1.0.5"
             modules(
                 "java.instrument",
                 "jdk.unsupported",
@@ -96,7 +96,7 @@ compose.desktop {
 // Remove jpackage/WiX's recursive INSTALLDIR cleanup from the completed MSI.
 // This finalizer edits only the generated installer database; normal MSI-owned
 // files and shortcuts remain uninstallable, while app data is preserved.
-val msiArtifact = layout.buildDirectory.file("compose/binaries/main/msi/CloudStream-1.0.4.msi")
+val msiArtifact = layout.buildDirectory.file("compose/binaries/main/msi/CloudStream-1.0.5.msi")
 
 val patchMsiUninstallSafety = tasks.register<Exec>("patchMsiUninstallSafety") {
     commandLine(
