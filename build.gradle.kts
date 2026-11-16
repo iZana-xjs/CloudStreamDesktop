@@ -25,6 +25,7 @@ buildscript {
                 "com.fasterxml.jackson.core:jackson-databind:2.18.11",
                 "com.fasterxml.jackson.dataformat:jackson-dataformat-xml:2.18.11",
                 "com.fasterxml.jackson.module:jackson-module-kotlin:2.18.11",
+                "org.json:json:20260719",
                 "org.jsoup:jsoup:1.23.2",
             )
             activateDependencyLocking()
@@ -71,6 +72,7 @@ subprojects {
             "com.fasterxml.jackson.core:jackson-databind:2.18.11",
             "com.fasterxml.jackson.dataformat:jackson-dataformat-xml:2.18.11",
             "com.fasterxml.jackson.module:jackson-module-kotlin:2.18.11",
+            "org.json:json:20260719",
             "org.jsoup:jsoup:1.23.2",
         )
         resolutionStrategy.eachDependency {
